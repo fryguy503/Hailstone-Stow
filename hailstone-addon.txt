@@ -1,10 +1,10 @@
 hailstone-addon 1
 name stow
 kind script
-version 0.2.1
+version 0.2.2
 autoload 1
 min_client 0.7.1-beta
 author Fryguy
-description Compact category cards for Hailstone inventory, bags and bank.
+description Compact category cards for Hailstone bags and bank.
 caps read,ui,actions,commands
-package any 29701 3be30cfa22db47fc608dfd5b938e0f638e9eca0e0f8c885287655175cdf456df stow-0.2.1.zip
+package any 28721 0e6af5889e1942370e1fb02d541bbab5d4c31bcc98619a1d119b819ac4cb0f35 stow-0.2.2.zip

@@ -14,7 +14,7 @@ M.bagFilters = {
 }
 
 M.defaults = {
-  enabled = true, replaceInventory = true, replaceBank = true, replaceBags = true,
+  enabled = true, replaceBank = true, replaceBags = true,
   inventoryMode = "grouped", bankMode = "grouped", columns = 10, size = 31,
   hideEmptyGroups = true, compressEmpty = true, windowLocked = false, showBagBar = false,
   qualityColors = true, searchDim = true, bankFiltering = true, bankTheme = "default",

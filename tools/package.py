@@ -21,7 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--client", type=Path, default=root.parent / "hailstone-client")
     parser.add_argument("--out", type=Path, default=root)
-    parser.add_argument("--version", default="0.2.1")
+    parser.add_argument("--version", default="0.2.2")
     args = parser.parse_args()
     packager = args.client / "tools" / "make_addon.py"
     if not packager.is_file():
@@ -38,7 +38,7 @@ def main():
                 "--name", "stow", "--version", args.version,
                 "--min-client", "0.7.1-beta", "--autoload",
                 "--caps", "read,ui,actions,commands", "--author", "Fryguy",
-                "--description", "Compact category cards for Hailstone inventory, bags and bank.",
+                "--description", "Compact category cards for Hailstone bags and bank.",
                 "--dir", str(staging), "--out", str(args.out),
             ],
             check=True,

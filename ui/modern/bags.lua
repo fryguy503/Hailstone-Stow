@@ -99,7 +99,6 @@ ui.window("Bags", function()
     return
   end
   local opened, carried, newBags, current = {}, {}, {}, {}
-  local ordinary = 0
   for _, name in ipairs(bagWindows) do
     local bag = identify(name)
     if bag then
@@ -107,7 +106,6 @@ ui.window("Bags", function()
       if bag.scope == "inventory" then
         carried[#carried + 1] = bag
         current[bag.slot] = bag.name
-        if not bag.combine then ordinary = ordinary + 1 end
         if previouslyOpen[bag.slot] ~= bag.name then newBags[#newBags + 1] = bag end
       end
     end
@@ -122,10 +120,9 @@ ui.window("Bags", function()
   end
   previouslyOpen = current
 
-  local groupOrdinary = not API.windows.Shown(INVENTORY) and ordinary > 1
   local grouped, first = {}, nil
   for _, bag in ipairs(carried) do
-    if openedTogether[bag.slot] ~= nil or (groupOrdinary and not bag.combine) then
+    if openedTogether[bag.slot] ~= nil then
       grouped[bag.window] = true
       first = first or bag
     end

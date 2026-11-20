@@ -1,12 +1,14 @@
 // Include from Hailstone's tests/inventory_manager_ui_test.cpp to run with the real UI, mock server and ImGui.
 #include "plugin/policy.h"
 #include "plugin/ui_bridge.h"
+#include "core/ascii_case.h"
 #include "net/door_packets.h"
 #include "net/trade_packets.h"
 
-TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
+TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bags and Bank") {
     const fs::path stow = fs::absolute(fs::path(__FILE__).parent_path().parent_path());
-    REQUIRE(fs::exists(stow / "ui" / "modern" / "inventory.lua"));
+    REQUIRE(fs::exists(stow / "ui" / "modern" / "bags.lua"));
+    CHECK_FALSE(fs::exists(stow / "ui" / "modern" / "inventory.lua"));
 
     MockConfig config = MockConfig::standard();
     auto carried = bag_item(5001, "Tradeskill Satchel", 24);
@@ -39,6 +41,10 @@ TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
     REQUIRE(rig.to_zone());
     auto& conn = rig.conn;
     put_coin_away(conn);
+    auto character = conn.character_name();
+    for (char& c : character) c = ascii_lower(c);
+    const auto old_preference = "stow.stow-test%7C" + character + ".option.replaceInventory";
+    std::ofstream(scratch.path() / "settings.txt") << "plugin.script:stow." << old_preference << "=1\n";
     auto* ctx = ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
     unsigned char* pixels = nullptr;
@@ -98,26 +104,43 @@ TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
             return false;
         };
 
-        api.show("InventoryWindow", true);
         frames();
-        auto* inventory_window = ImGui::FindWindowByName("Stow###stow.inventory");
-        REQUIRE(inventory_window != nullptr);
-        const auto expanded = inventory_window->Size;
+        REQUIRE(api.replaces("InventoryWindow"));
+        CHECK(run("return ui.GetSetting('" + old_preference + "')") == "1");
+        api.toggle("InventoryWindow"); // The stock I key is routed through this toggle.
+        frames();
+        const auto* stock_inventory = ImGui::FindWindowByName("###modern.InventoryWindow");
+        REQUIRE(stock_inventory != nullptr);
+        CHECK(stock_inventory->Active);
+        const auto* old_stow_inventory = ImGui::FindWindowByName("Stow###stow.inventory");
+        CHECK((old_stow_inventory == nullptr || !old_stow_inventory->Active));
+        CHECK(ImGui::FindWindowByName("Stow Bags###stow.allBags") == nullptr);
+        api.toggle("InventoryWindow");
+        frames();
+        CHECK_FALSE(stock_inventory->Active);
+
+        api.close_all_bags();
+        api.toggle_all_bags(); // Shift+B dispatches to this native entry point.
+        frames();
+        auto* aggregated_bags = ImGui::FindWindowByName("Stow Bags###stow.allBags");
+        REQUIRE(aggregated_bags != nullptr);
+        CHECK(aggregated_bags->Active);
+        const auto expanded = aggregated_bags->Size;
         CHECK(expanded.x < 480.f);
         CHECK(expanded.y < 420.f);
-        REQUIRE(click_item(*inventory_window, "##heading.inventory.new", 6.f, 70.f, false));
+        REQUIRE(click_item(*aggregated_bags, "##heading.inventory.new", 6.f, 70.f, false));
         frames();
         CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "1");
-        CHECK(inventory_window->Size.y < expanded.y);
-        REQUIRE(click_item(*inventory_window, "##heading.inventory.new", 6.f, 70.f, false));
+        CHECK(aggregated_bags->Size.y < expanded.y);
+        REQUIRE(click_item(*aggregated_bags, "##heading.inventory.new", 6.f, 70.f, false));
         frames();
         CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "0");
-        CHECK(inventory_window->Size.y == doctest::Approx(expanded.y));
+        CHECK(aggregated_bags->Size.y == doctest::Approx(expanded.y));
         const auto platinum = conn.inventory_coin(0);
         REQUIRE(platinum > 0);
         conn.inventory_money_button(0, 1, nullptr);
         REQUIRE(conn.cursor_coins()[net::kCoinPlatinum] == 1u);
-        REQUIRE(click_item(*inventory_window, "##stowCoin.IW_Money0", 14.f, 36.f, true));
+        REQUIRE(click_item(*aggregated_bags, "##stowCoin.IW_Money0", 14.f, 36.f, true));
         CHECK(conn.cursor_coins()[net::kCoinPlatinum] == 0u);
         CHECK(conn.inventory_coin(0) == platinum);
         REQUIRE(run(R"lua(
@@ -145,7 +168,7 @@ for _, bag in ipairs(S.view("inventory", "bags").bags) do
 end
 )lua") == "true");
         const auto moves_before_sort = MockEqServer::count(rig.server.zone_log, net::Op::MoveItem);
-        REQUIRE(click_item(*inventory_window, "##stowDock.organize", 12.f, 48.f, true));
+        REQUIRE(click_item(*aggregated_bags, "##stowDock.organize", 12.f, 48.f, true));
         REQUIRE(conn.item_job().has_value());
         CHECK(conn.item_job()->mode == net::GameConnection::ItemJobMode::Sort);
         CHECK(run("return tostring(S.view('inventory', 'grouped', 'is:new').matched)") == "0");
@@ -153,19 +176,35 @@ end
         CHECK(MockEqServer::count(rig.server.zone_log, net::Op::MoveItem) > moves_before_sort);
         CHECK(id_at(conn, 26, 0) == part.id);
 
-        api.show("InventoryWindow", false);
-        api.close_all_bags();
-        api.toggle_all_bags(); // Shift+B dispatches to this native entry point.
-        frames();
-        const auto* aggregated_bags = ImGui::FindWindowByName("Stow Bags###stow.allBags");
-        REQUIRE(aggregated_bags != nullptr);
-        CHECK(aggregated_bags->Active);
         CHECK(run(R"lua(
 local name, _, combine, scope = hs.UI.inventory.BagInfo("Bag2")
 return tostring(name == "Crafting Toolbox" and combine and scope == "inventory")
 )lua") == "true");
         const auto* separate_toolbox = ImGui::FindWindowByName("Crafting Toolbox###stow.Bag2");
         CHECK((separate_toolbox == nullptr || !separate_toolbox->Active));
+        api.toggle("InventoryWindow");
+        frames();
+        CHECK(stock_inventory->Active);
+        CHECK(aggregated_bags->Active);
+        api.toggle("InventoryWindow");
+        frames();
+        CHECK_FALSE(stock_inventory->Active);
+        CHECK(aggregated_bags->Active);
+        api.toggle("InventoryWindow");
+        frames();
+        CHECK(stock_inventory->Active);
+        api.toggle_all_bags();
+        frames();
+        CHECK_FALSE(aggregated_bags->Active);
+        CHECK(stock_inventory->Active);
+        api.toggle_all_bags();
+        frames();
+        CHECK(aggregated_bags->Active);
+        CHECK(stock_inventory->Active);
+        api.toggle("InventoryWindow");
+        frames();
+        CHECK_FALSE(stock_inventory->Active);
+        CHECK(aggregated_bags->Active);
         api.toggle_all_bags();
         frames();
         CHECK_FALSE(aggregated_bags->Active);
