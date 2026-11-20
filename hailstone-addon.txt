@@ -1,0 +1,10 @@
+hailstone-addon 1
+name stow
+kind script
+version 0.1.0
+autoload 1
+min_client 0.7.1-beta
+author Fryguy
+description Grouped inventory, bags and bank for Hailstone.
+caps read,ui,actions,commands
+package any 23001 11bbd1c6cff8a0d2a8a2520fc481b8383dfa7a70e2441d25c37e4403926b1b34 stow-0.1.0.zip

@@ -1,0 +1,39 @@
+# Hailstone Stow
+
+Stow adds grouped inventory, bag, and bank windows to Hailstone. It uses the Modern interface and works with interfaces that inherit Modern’s window layout.
+
+## Install
+
+In Hailstone’s login screen, open **Add-ons** and paste this repository’s URL. Approve the add-on and enter the world. Stow uses the normal inventory and bag keys and opens the bank view when you visit a banker. Type `/stow` or choose **Stow Settings** from the plugin menu to change settings even when the replacement windows are disabled.
+
+Stow needs the server to allow its Lua add-on and grant UI, read, actions, and commands. You can disable Stow in **My add-ons** to return to the selected interface’s windows.
+
+## Bags and bank
+
+- Choose **Categories**, **Combined**, or **By bag** independently for inventory and bank. Show the physical bag bar to open or swap bags and scope the current view to a bag.
+- Use **Character** to open the stock equipment, stats, Bandolier, and alternate currency view. Return to Stow from the companion button. Trade, quantity, and item confirmation dialogs use Hailstone’s native interaction.
+- Use the normal item controls to pick up, place, split, inspect, use, and link items through item inspection. The compressed free-slot tile drops the item you are holding into an eligible slot. Expand the tile or use individual empty slots to choose the exact destination.
+- Find items by name or group. Combine terms such as `type:tradeskill -is:kept`, `bag:"Large Sack"`, `id:1002`, or `is:new`. Other flags include `is:junk`, `is:quest`, `is:lore`, `is:notrade`, and `is:usable`.
+- Middle-click or Ctrl+Alt+right-click an item to assign every copy to a group, mark it **Keep**, mark it for sale, or lock its current slot for item jobs. Custom groups can represent outfits, collections, or items you want to keep handy. A display group change leaves the item in its current slot.
+- **Stack** fills matching stacks. **Sort** physically orders items through Hailstone’s native item job. Assign a filter to a physical bag and use **Tidy** to move matching items into its compatible free slots. These jobs support carried bags and personal bank bags. Shared bank supports manual moves.
+- Portable tradeskill containers retain their **Combine** actions. Tradeskill storage bags use the game’s tradeskill-item restriction when items are moved or sorted.
+
+## Settings
+
+Choose **Everyday**, **Adventurer**, **Tradeskiller**, **Compact**, or **Per Bag** as a starting point. Adjust item size, columns, sorting, bank color, free-space compression, window locking, and visible categories. Save your display settings as a named preset. You can create, rename, reorder, disable, and delete custom groups per character.
+
+**New Items** compares item quantities against the last **Reset New Items**. On first use, existing carried items are included until you reset. New Items survives reloads and includes quantities added through bank withdrawals. You can give category assignments priority over New Items.
+
+Auto-sell and Tidy after loot are opt-in. Auto-sell uses items you explicitly marked for sale and honors Hailstone’s Keep protection. The vendor must be open. The add-on uses EverQuest’s stock bank capacity and item properties.
+
+## Client compatibility
+
+Stow’s core views and item actions require Hailstone 0.7.1-beta or later. Automatic Quest Items grouping, special bag labels, and pre-drop compatibility checks require a client exposing `questItem`, `bagType`, `bagSize`, and `inventory.CanPlace`. With older clients, you can still assign quest items manually and select real empty slots. The native game rules apply to every placement.
+
+## Build and test
+
+With a Hailstone client checkout beside this repository, run `python tools/package.py` to regenerate the manifest and platform-independent ZIP. To stage elsewhere, pass `--out dist`. With Lua 5.4, run `lua tests/test_model.lua` from the repository root.
+
+The ImGui host smoke test in `tests/host_smoke.inc` can be included at the end of Hailstone’s `tests/inventory_manager_ui_test.cpp` when building the client’s test suite. It uses a mock server and the real Hailstone UI host.
+
+Stow is an original EverQuest add-on. The published cargBags Nivaya feature set informed its design. [cargBags Nivaya](https://www.curseforge.com/wow/addons/cargbags-nivaya-mop-update)
