@@ -328,8 +328,34 @@ local function testActionGuardsAndJunk()
   eq(#host.calls, beforeLoot + 1, "do not repeat after loot closes")
 end
 
+local function testOrganizeAction()
+  local S, host = fixture()
+  eq(S.view("inventory", "grouped", "is:new").matched, 4, "initial New Items for organize")
+  host.busy = true
+  eq(S.organize(), false, "organize defers to the active item job")
+  eq(#host.calls, 0, "no native sort while busy")
+  eq(S.view("inventory", "grouped", "is:new").matched, 4, "busy organize preserves the New Items baseline")
+
+  host.busy = nil
+  host.sortError = "Put away the held item first."
+  eq(S.organize(), false, "organize reports native sort failure")
+  eq(S.status(), host.sortError, "organize surfaces the native refusal")
+  eq(S.view("inventory", "grouped", "is:new").matched, 4, "rejected sort preserves the New Items baseline")
+
+  host.sortError = nil
+  eq(S.organize(), true, "organize clears New Items when sort accepts an already sorted inventory")
+  local call = host.calls[#host.calls]
+  eq(call[1], "sort", "organize invokes the native job")
+  eq(call[2], "inventory", "organize targets carried inventory")
+  eq(call[3], "sort", "organize sorts rather than stacking")
+  eq(S.view("inventory", "grouped", "is:new").matched, 0, "successful organize resets New Items")
+  host.rows[5].item.count, host.revision = 6, 2
+  eq(S.view("inventory", "grouped", "is:new").matched, 1, "organize still detects subsequent loot")
+end
+
 testGroupingAndSnapshots()
 testLayoutsAndSearch()
 testProfilesAndPresets()
 testActionGuardsAndJunk()
+testOrganizeAction()
 print("Stow model tests passed")

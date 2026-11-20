@@ -1,6 +1,7 @@
 // Include from Hailstone's tests/inventory_manager_ui_test.cpp to run with the real UI, mock server and ImGui.
 #include "plugin/policy.h"
 #include "plugin/ui_bridge.h"
+#include "net/door_packets.h"
 #include "net/trade_packets.h"
 
 TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
@@ -22,11 +23,16 @@ TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
     }
     auto quest = make_item(5003, "Quest Seal", 25);
     quest.quest_item = 1;
+    auto toolbox = bag_item(5010, "Crafting Toolbox", 26);
+    toolbox.bag_type = 0x0a;
+    auto part = make_item(5011, "Toolbox Component", 26);
+    part.slot = at(26, 0);
+    toolbox.contents.push_back({0, part});
     auto banked = bag_item(5004, "Bank Bag", 0);
     banked.slot = {net::kInvBank, 0, -1, -1};
     auto shared = bag_item(5005, "Shared Bag", 0);
     shared.slot = {net::kInvSharedBank, 0, -1, -1};
-    config.characters[0].inventory.insert(config.characters[0].inventory.end(), {carried, quest, banked, shared});
+    config.characters[0].inventory.insert(config.characters[0].inventory.end(), {carried, quest, toolbox, banked, shared});
 
     ScratchDir scratch("stow_host_smoke");
     Rig rig(std::move(config), quick_options());
@@ -116,7 +122,6 @@ TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
         CHECK(conn.inventory_coin(0) == platinum);
         REQUIRE(run(R"lua(
 assert(S.actions())
-assert(S.resetNew())
 local data = S.view("inventory", "grouped", "is:quest")
 assert(data.matched == 1)
 local rows = S.view("inventory", "bags", "")
@@ -132,6 +137,80 @@ end
         REQUIRE(run("return tostring(S.click({empty=true, where='carried', slot=24, sub=31, place='i:24:31'}, 'left'))") ==
             "true");
         CHECK(id_at(conn, 24, 31) == material.id);
+
+        REQUIRE(run(R"lua(
+assert(S.view("inventory", "grouped", "is:new").matched > 0)
+for _, bag in ipairs(S.view("inventory", "bags").bags) do
+  if bag.place == "i:26" then return tostring(S.setLocked(bag, true)) end
+end
+)lua") == "true");
+        const auto moves_before_sort = MockEqServer::count(rig.server.zone_log, net::Op::MoveItem);
+        REQUIRE(click_item(*inventory_window, "##stowDock.organize", 12.f, 48.f, true));
+        REQUIRE(conn.item_job().has_value());
+        CHECK(conn.item_job()->mode == net::GameConnection::ItemJobMode::Sort);
+        CHECK(run("return tostring(S.view('inventory', 'grouped', 'is:new').matched)") == "0");
+        REQUIRE(rig.until([&] { return !conn.item_job().has_value(); }));
+        CHECK(MockEqServer::count(rig.server.zone_log, net::Op::MoveItem) > moves_before_sort);
+        CHECK(id_at(conn, 26, 0) == part.id);
+
+        api.show("InventoryWindow", false);
+        api.close_all_bags();
+        api.toggle_all_bags(); // Shift+B dispatches to this native entry point.
+        frames();
+        const auto* aggregated_bags = ImGui::FindWindowByName("Stow Bags###stow.allBags");
+        REQUIRE(aggregated_bags != nullptr);
+        CHECK(aggregated_bags->Active);
+        CHECK(run(R"lua(
+local name, _, combine, scope = hs.UI.inventory.BagInfo("Bag2")
+return tostring(name == "Crafting Toolbox" and combine and scope == "inventory")
+)lua") == "true");
+        const auto* separate_toolbox = ImGui::FindWindowByName("Crafting Toolbox###stow.Bag2");
+        CHECK((separate_toolbox == nullptr || !separate_toolbox->Active));
+        api.toggle_all_bags();
+        frames();
+        CHECK_FALSE(aggregated_bags->Active);
+
+        api.right_click_item(at(24));
+        frames();
+        const auto* satchel_window = ImGui::FindWindowByName("Tradeskill Satchel · Tradeskill only###stow.Bag1");
+        REQUIRE(satchel_window != nullptr);
+        CHECK(satchel_window->Active);
+        auto& io = ImGui::GetIO();
+        io.AddKeyEvent(ImGuiMod_Shift, true);
+        io.AddKeyEvent(ImGuiKey_B, true);
+        api.open_all_bags(); // The satchel was opened directly, so only the toolbox is new this frame.
+        frames(1);
+        CHECK(aggregated_bags->Active);
+        separate_toolbox = ImGui::FindWindowByName("Crafting Toolbox###stow.Bag2");
+        CHECK((separate_toolbox == nullptr || !separate_toolbox->Active));
+        io.AddKeyEvent(ImGuiKey_B, false);
+        io.AddKeyEvent(ImGuiMod_Shift, false);
+        api.close_all_bags();
+        frames(1);
+
+        api.right_click_item(at(24));
+        frames();
+        io.AddKeyEvent(ImGuiMod_Ctrl, true);
+        frames(1);
+        api.right_click_item(at(26));
+        io.AddKeyEvent(ImGuiMod_Ctrl, false);
+        frames();
+        auto* toolbox_window = ImGui::FindWindowByName("Crafting Toolbox###stow.Bag2");
+        REQUIRE(toolbox_window != nullptr);
+        CHECK(satchel_window->Active);
+        CHECK(toolbox_window->Active);
+        CHECK_FALSE(aggregated_bags->Active);
+        REQUIRE(click_item(*toolbox_window, "Combine", 20.f, 85.f, false));
+        REQUIRE(rig.until([&] { return MockEqServer::count(rig.server.zone_log, net::Op::TradeSkillCombine) == 1; }));
+        for (const auto& packet : rig.server.zone_log) {
+            if (net::from_wire(packet.opcode) == net::Op::TradeSkillCombine) {
+                REQUIRE(packet.data.size() == net::kTradeSkillCombineSize);
+                CHECK(std::to_integer<int>(packet.data[4]) == 26);
+            }
+        }
+        rig.server.zone.send_reliable(net::AppPacket(net::to_wire(net::Op::TradeSkillCombine)));
+        REQUIRE(rig.until([&] { return !conn.combine_pending(); }));
+        api.close_all_bags();
 
         REQUIRE(conn.activate_bank(rig.server.config.own_spawn_id));
         api.show("BigBankWnd", true);

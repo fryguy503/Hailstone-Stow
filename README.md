@@ -12,6 +12,7 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 
 - Choose **Category cards**, **Combined**, or **By physical bag** independently for inventory and bank from the dock’s options menu. Click a card heading to collapse it. Drag the dock’s title to move Stow.
 - Hover a dock icon to see what it does. Use the bag icon to show physical bags, and the magnifier to open search. Click coins to use the game’s coin controls.
+- **Shift+B** opens carried bags together, including tradeskill containers. Open a tradeskill container directly to use its Combine window.
 - Choose **Character** in the options menu to open the stock equipment, stats, Bandolier, and alternate currency view. Return to Stow from the companion button. Trade, quantity, and item confirmation dialogs use Hailstone’s native interaction.
 - Use the normal item controls to pick up, place, split, inspect, use, and link items through item inspection. The free-slot counter drops the item you are holding into an eligible slot. Right-click the counter to show or hide individual empty slots.
 - Find items by name or group. Combine terms such as `type:tradeskill -is:kept`, `bag:"Large Sack"`, `id:1002`, or `is:new`. Other flags include `is:junk`, `is:quest`, `is:lore`, `is:notrade`, and `is:usable`.
@@ -24,6 +25,8 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 Choose **Everyday**, **Adventurer**, **Tradeskiller**, **Compact**, or **Per Bag** as a starting point. Adjust item size, columns, sorting, bank color, free-space compression, window locking, and visible categories. Save your display settings as a named preset. You can create, rename, reorder, disable, and delete custom groups per character.
 
 **New Items** compares item quantities against the last **Reset New Items**. On first use, existing carried items are included until you reset. New Items survives reloads and includes quantities added through bank withdrawals. You can give category assignments priority over New Items.
+
+Use **Sort inventory and clear New Items** on the inventory or bags dock to run the native inventory sort and refresh the New Items baseline in one click.
 
 Auto-sell and Tidy after loot are opt-in. Auto-sell uses items you explicitly marked for sale and honors Hailstone’s Keep protection. The vendor must be open. The add-on uses EverQuest’s stock bank capacity and item properties.
 

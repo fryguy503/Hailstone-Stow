@@ -23,6 +23,7 @@ local combinedOptions = {
 
 local bagWindows = {}
 for n = 1, 36 do bagWindows[n] = "Bag" .. n end
+local previouslyOpen, openedTogether = {}, {}
 
 local function identify(window)
   if not API.windows.Shown(window) then return nil end
@@ -91,25 +92,50 @@ local function drawBag(bag)
 end
 
 ui.window("Bags", function()
-  if not API.session.InGame() then return end
-  if not V.active("replaceBags") then return ui.base_window() end
-  local opened, carried = {}, {}
+  local inGame = API.session.InGame()
+  if not inGame or not V.active("replaceBags") then
+    previouslyOpen, openedTogether = {}, {}
+    if inGame then return ui.base_window() end
+    return
+  end
+  local opened, carried, newBags, current = {}, {}, {}, {}
+  local ordinary = 0
   for _, name in ipairs(bagWindows) do
     local bag = identify(name)
     if bag then
       opened[#opened + 1] = bag
-      if bag.scope == "inventory" and not bag.combine then carried[#carried + 1] = bag end
+      if bag.scope == "inventory" then
+        carried[#carried + 1] = bag
+        current[bag.slot] = bag.name
+        if not bag.combine then ordinary = ordinary + 1 end
+        if previouslyOpen[bag.slot] ~= bag.name then newBags[#newBags + 1] = bag end
+      end
     end
   end
-  local inventoryOpen = API.windows.Shown(INVENTORY)
-  local group = not inventoryOpen and #carried > 1
-  if group then
-    local first = carried[1]
+  for slot, name in pairs(openedTogether) do
+    if current[slot] ~= name then openedTogether[slot] = nil end
+  end
+  -- Open All creates its windows together. The default chord also identifies the burst when only one bag opens.
+  -- Keep the marks by physical slot: native BagN identifiers shift when a window closes.
+  if #newBags > 1 or (#newBags == 1 and ui.GetIO().shift and ui.IsKeyPressed(ui.Key.B)) then
+    for _, bag in ipairs(newBags) do openedTogether[bag.slot] = bag.name end
+  end
+  previouslyOpen = current
+
+  local groupOrdinary = not API.windows.Shown(INVENTORY) and ordinary > 1
+  local grouped, first = {}, nil
+  for _, bag in ipairs(carried) do
+    if openedTogether[bag.slot] ~= nil or (groupOrdinary and not bag.combine) then
+      grouped[bag.window] = true
+      first = first or bag
+    end
+  end
+  if first then
     V.compact(first.window, "Stow Bags", "allBags", "inventory", combinedOptions,
       function() closeInventoryBags(opened) end)
   end
   for _, bag in ipairs(opened) do
-    if not group or bag.scope ~= "inventory" or bag.combine then drawBag(bag) end
+    if not grouped[bag.window] then drawBag(bag) end
   end
   local world = identify("WorldContainer")
   if world then drawBag(world) end

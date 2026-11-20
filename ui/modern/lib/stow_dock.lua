@@ -45,7 +45,9 @@ function D.measure(screen, scope, opts, state, scale, free, capacity)
   if opts.sharedCoin then coin(opts.sharedCoin, 1, true) end
   local done, total, job = API.inventory.ItemJob()
   dock.job = done and total and {done = done, total = total, kind = job} or nil
-  for _, id in ipairs({"search", "stack", "bags", "options"}) do
+  add({id = "search", width = h})
+  if scope == "inventory" then add({id = "organize", width = h}) end
+  for _, id in ipairs({"stack", "bags", "options"}) do
     add({id = id, width = h})
   end
   local freeText = T.Thousands(dock.free)
@@ -114,6 +116,14 @@ local function glyph(id, x, y, c, s)
       ui.DrawRect(x - d, y - 3 * s + offset * s, x + d, y + 3 * s + offset * s,
         c[1], c[2], c[3], 1, s, math.max(1, s))
     end
+  elseif id == "organize" then
+    for n = 0, 2 do
+      stroke(x - 5 * s, y + (3 * n - 3) * s, x - n * s, y + (3 * n - 3) * s, c, s)
+    end
+    local right = x + 3 * s
+    stroke(right, y - d, right, y + d, c, s)
+    stroke(right - 2 * s, y + 2 * s, right, y + d, c, s)
+    stroke(right, y + d, right + 2 * s, y + 2 * s, c, s)
   else
     icons.Draw(id == "search" and "Find" or id == "bags" and "Inventory" or "Options", x, y, 11 * s, c)
   end
@@ -178,7 +188,8 @@ local function drawControl(dock, token, x, y, w)
   local hover = ui.IsItemHovered()
   if id == "empty" then return emptyButton(dock, token, x, y, w, click, hover) end
   local active = (id == "search" and state.searchOpen) or (id == "bags" and state.showBags) or (id == "stack" and dock.job)
-  local color = (active or hover) and C.accent or C.muted
+  local busy = id == "organize" and dock.job
+  local color = busy and C.faint or ((active or hover) and C.accent or C.muted)
   if active or hover then ui.DrawRectFilled(x, y, x + w, y + h, color[1], color[2], color[3], 0.15, 3 * s) end
   local tip
   if id == "move" then
@@ -200,6 +211,10 @@ local function drawControl(dock, token, x, y, w)
         state.focusSearch = state.searchOpen
         if not state.searchOpen then state.query = "" end
       end
+    elseif id == "organize" then
+      tip = busy and "Finish the current item job to sort inventory and clear New Items"
+        or "Sort inventory and clear New Items"
+      if click then S.organize() end
     elseif id == "stack" then
       tip = dock.job and (string.format("Stop %s (%d / %d)", dock.job.kind or "item job", dock.job.done, dock.job.total))
         or "Restack matching items"

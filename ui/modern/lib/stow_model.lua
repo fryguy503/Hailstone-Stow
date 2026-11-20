@@ -574,6 +574,18 @@ function M.run(scope, mode, bagWindow)
   return not err
 end
 
+function M.organize()
+  if Inventory.ItemJob() then
+    M.info("Finish the current item job before sorting and clearing New Items.")
+    return false
+  end
+  if not M.run("inventory", "sort") then return false end
+  if not M.resetNew() then return false end
+  M.info(Inventory.ItemJob() and "New Items cleared. Sorting inventory."
+    or "New Items cleared. Inventory is already organized.")
+  return true
+end
+
 function M.sell()
   local data = inventorySnapshot()
   if not data or not M.actions() then M.info("Item actions are unavailable."); return false end
