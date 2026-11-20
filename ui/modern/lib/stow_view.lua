@@ -247,12 +247,50 @@ local function cleanPin(data, state, scope)
   state.pinned[scope] = nil
 end
 
-local function cardHeader(card, x, y, w, h, scale, accent)
+local function sectionFor(data, scope, state, scale, columns)
+  cleanPin(data, state, scope)
+  local freeCells = {}
+  local cards = collect(data, scope, state, scale, columns, freeCells)
+  local capacity = data.capacity or 0
+  local free = data.free or 0
+  if state.pinned[scope] then
+    free = #freeCells
+    for _, bag in ipairs(data.bags) do
+      if bag.place == state.pinned[scope] then
+        capacity = bag.item.bagSlots or 0
+        break
+      end
+    end
+  end
+  return {scope = scope, data = data, cards = cards,
+    target = {scope = scope, free = free, capacity = capacity, cells = freeCells}}
+end
+
+local function addFreeCard(section, state, showCompact, columns, scale)
+  if not S.get("compressEmpty") then return end
+  local target = section.target
+  local expanded = state.expandedFree[section.scope] and #target.cells > 0
+  if not (showCompact or expanded) then return end
+  local card = newCard(section.scope .. ".empty", "Empty Slots", nil, expanded and target.cells or {}, columns, scale)
+  card.freeTarget, card.expanded, card.closed = target, expanded, false
+  if not expanded then card.tiles, card.target = 1, target end
+  table.insert(section.cards, showCompact and 1 or (#section.cards + 1), card)
+end
+
+local function cardHeader(card, x, y, w, h, scale, accent, state)
   local key = "stow.collapsed." .. card.id
   local closed = card.closed
+  if card.freeTarget then closed = not card.expanded end
   if T.Hit("##heading." .. card.id, x, y, x + w, y + h, false) then
-    closed = not closed
-    ui.SetSetting(key, closed and "1" or "0")
+    if card.freeTarget then
+      if #card.freeTarget.cells > 0 then
+        state.expandedFree[card.freeTarget.scope] = closed
+        closed = not closed
+      end
+    else
+      closed = not closed
+      ui.SetSetting(key, closed and "1" or "0")
+    end
   end
   local hovered = ui.IsItemHovered()
   local c = hovered and accent or C.muted
@@ -276,10 +314,10 @@ local function cardHeader(card, x, y, w, h, scale, accent)
   local label = T.Fit(card.label, math.max(1, right - left), T.font.small)
   T.Text(left, middle - textH / 2, label, C.text, T.font.small)
   if hovered and label ~= card.label then ui.SetTooltip(card.label) end
-  return not closed
+  return not closed or card.target ~= nil
 end
 
-local function drawCards(section, x, y, metrics, scale, query, selectedBag, clipTop, clipBottom)
+local function drawCards(section, x, y, metrics, scale, state, dock, selectedBag, clipTop, clipBottom)
   local accent = section.scope == "inventory" and C.accent or (bankTints[S.get("bankTheme")] or C.accent)
   local step = metrics.tile + metrics.tileGap
   for n, card in ipairs(section.cards) do
@@ -288,12 +326,16 @@ local function drawCards(section, x, y, metrics, scale, query, selectedBag, clip
     if yy + box.h >= clipTop and yy <= clipBottom then
       ui.DrawRectFilled(xx, yy, xx + box.w, yy + box.h, C.window[1], C.window[2], C.window[3], 0.96, 4 * scale)
       ui.DrawRect(xx, yy, xx + box.w, yy + box.h, accent[1], accent[2], accent[3], 0.33, 4 * scale, 1)
-      if cardHeader(card, xx, yy, box.w, metrics.header, scale, accent) and not card.closed then
-        for i, cell in ipairs(card.cells) do
-          local dy = yy + metrics.header + ((i - 1) // box.columns) * step
-          if dy + metrics.tile >= clipTop and dy <= clipBottom then
-            local dx = xx + metrics.pad + ((i - 1) % box.columns) * step
-            drawCell(cell, dx, dy, metrics.tile, scale, query, selectedBag)
+      if cardHeader(card, xx, yy, box.w, metrics.header, scale, accent, state) and not card.closed then
+        if card.target then
+          Dock.drawTarget(dock, card.target, xx + metrics.pad, yy + metrics.header, metrics.tile, metrics.tile, true)
+        else
+          for i, cell in ipairs(card.cells) do
+            local dy = yy + metrics.header + ((i - 1) // box.columns) * step
+            if dy + metrics.tile >= clipTop and dy <= clipBottom then
+              local dx = xx + metrics.pad + ((i - 1) % box.columns) * step
+              drawCell(cell, dx, dy, metrics.tile, scale, state.query, selectedBag)
+            end
           end
         end
       end
@@ -336,7 +378,7 @@ local function drawTray(tray, state, x, y, scale)
   return pick
 end
 
-local function makeBody(sections, state, cap, metrics, scale)
+local function makeBody(sections, state, cap, metrics, scale, dock)
   local plan = {width = 0, height = 0, blocks = {}}
   local function add(height, width, draw)
     if height <= 0 then return end
@@ -347,7 +389,7 @@ local function makeBody(sections, state, cap, metrics, scale)
   end
   local function line(text, color)
     local tw, th = T.TextSize(text, T.font.small)
-    add(th + 2 * scale, math.min(cap, tw), function(x, y)
+    add(th + 2 * scale, math.min(cap, tw + 4 * scale), function(x, y)
       T.Text(x + 2 * scale, y + scale, T.Fit(text, math.max(1, cap - 4 * scale), T.font.small), color, T.font.small)
     end)
   end
@@ -355,7 +397,8 @@ local function makeBody(sections, state, cap, metrics, scale)
     local tray = traySize(section.data, state, section.scope, cap, scale)
     local packed = Cards.pack(section.cards, cap, metrics)
     section.packed = packed
-    if section.scope == "shared" and (tray or packed.height > 0) then line("Shared bank", C.muted) end
+    if section.scope == "bank" then line("Personal Bank", C.text) end
+    if section.scope == "shared" then line("Shared Bank", C.text) end
     local hoveredBag
     if tray then
       add(tray.height, tray.width, function(x, y)
@@ -363,7 +406,7 @@ local function makeBody(sections, state, cap, metrics, scale)
       end)
     end
     add(packed.height, packed.width, function(x, y, top, bottom)
-      drawCards(section, x, y, metrics, scale, state.query, hoveredBag, top, bottom)
+      drawCards(section, x, y, metrics, scale, state, dock, hoveredBag, top, bottom)
     end)
   end
   if plan.height == 0 then
@@ -392,6 +435,36 @@ local function drawBody(plan, width)
   ui.Dummy(width, plan.height)
 end
 
+local function saveAnchor(state, key)
+  ui.SetSetting(key, string.format("%d,%d,%d", state.anchorX, state.anchorY, state.dockUnits))
+end
+
+local function initializeAnchor(state, key, dock, sections, cap, metrics, scale, viewportW, viewportH, stockX, stockY)
+  if state.anchorX ~= nil then return end
+  local stored = ui.GetSetting(key) or ""
+  local x, y, width = stored:match("^(-?%d+),(-?%d+),?(%d*)$")
+  state.anchorX, state.anchorY, state.dockUnits = tonumber(x), tonumber(y), tonumber(width)
+  if state.anchorX and state.dockUnits and state.dockUnits > 0 then return end
+
+  -- Establish the toolbar from the folded body once. Opening empty slots later may widen their grid,
+  -- but cannot move the toolbar or change the width used to lay out its controls.
+  local folded = makeBody(sections, state, cap, metrics, scale, dock)
+  local initialW = math.min(viewportW, math.ceil(math.max(folded.width, math.min(dock.width, cap))))
+  state.dockUnits = math.max(1, math.ceil(initialW / scale))
+  if not state.anchorX then
+    local suffix = key:sub(#"stow.compact.anchor." + 1)
+    local previous = ui.GetSetting("stow.compact.pos." .. suffix) or ui.GetSetting("stow.layout." .. suffix)
+    local oldX, oldY = (previous or ""):match("^(-?%d+),(-?%d+)")
+    local inset = previous and math.min(8 * scale, viewportW / 8, viewportH / 8) or 0
+    local oldDockH = math.ceil(Dock.height(dock, initialW))
+    local oldH = math.min(viewportH - 2 * inset, math.ceil(folded.height + oldDockH + metrics.gap))
+    state.anchorX, state.anchorY = Cards.migrate(tonumber(oldX) or stockX or 100,
+      tonumber(oldY) or stockY or 100, initialW, oldH, oldDockH, viewportW, viewportH, inset)
+    state.anchorX, state.anchorY = math.floor(state.anchorX), math.floor(state.anchorY)
+  end
+  saveAnchor(state, key)
+end
+
 function V.compact(screen, title, key, scope, opts, onClose)
   local shown, stockX, stockY = API.windows.Replace(screen)
   local state = compactStates[key]
@@ -400,85 +473,62 @@ function V.compact(screen, title, key, scope, opts, onClose)
     return
   end
   if not state then
-    state = {pinned = {}, query = ""}
+    state = {pinned = {}, expandedFree = {}, query = ""}
     compactStates[key] = state
   end
   if not state.open or state.screen ~= screen then
     state.open, state.screen = true, screen
-    state.showBags, state.showFree = S.get("showBagBar"), not S.get("compressEmpty")
+    state.showBags = S.get("showBagBar")
     state.query, state.searchOpen = "", false
     state.pinned = {}
   end
-  state.title, state.closeRequested = title, false
+  state.title, state.closeRequested, state.dragging = title, false, false
 
   local io = ui.GetIO()
   local scale = io.uiScale or 1
-  local margin = math.min(8 * scale, io.width / 8, io.height / 8)
-  local maxWidth, maxHeight = math.max(1, io.width - 2 * margin), math.max(1, io.height - 2 * margin)
+  local viewportW, viewportH = math.max(1, math.floor(io.width)), math.max(1, math.floor(io.height))
   local columns = S.get("columns")
-  local metrics = {pad = 4 * scale, gap = 5 * scale, tile = math.max(1, math.min(S.get("size") * scale, maxWidth - 8 * scale)),
+  local metrics = {pad = 4 * scale, gap = 5 * scale,
+    tile = math.max(1, math.min(S.get("size") * scale, viewportW - 8 * scale)),
     tileGap = 3 * scale, header = math.max(17 * scale, select(2, T.TextSize("Ag", T.font.small)) + 4 * scale)}
 
   local data = S.view(scope, nil, state.query)
-  local shared = scope == "bank" and S.view("shared", nil, state.query) or nil
-  local mainFree, sharedFree = {}, {}
-  cleanPin(data, state, scope)
-  local sections = {{scope = scope, data = data, cards = collect(data, scope, state, scale, columns, mainFree)}}
-  if shared then
-    cleanPin(shared, state, "shared")
-    sections[#sections + 1] = {scope = "shared", data = shared,
-      cards = collect(shared, "shared", state, scale, columns, sharedFree)}
+  local main = sectionFor(data, scope, state, scale, columns)
+  local sections, targets = {main}, {main.target}
+  if scope == "bank" then
+    local shared = sectionFor(S.view("shared", nil, state.query), "shared", state, scale, columns)
+    sections[#sections + 1], targets[#targets + 1] = shared, shared.target
   end
-  state.freeCells = mainFree
-  state.dropCells = state.pinned.shared and sharedFree or mainFree
-  state.dropLabel = shared and (state.pinned.shared and " in the shared bank" or " in the personal bank") or nil
-  if #sharedFree > 0 then
-    state.freeCells = {table.unpack(mainFree)}
-    for _, cell in ipairs(sharedFree) do state.freeCells[#state.freeCells + 1] = cell end
-  end
-  if state.showFree and S.get("compressEmpty") then
-    local freeCards = {}
-    if #mainFree > 0 then
-      freeCards[#freeCards + 1] = newCard(scope .. ".empty", shared and "Personal bank free slots" or "Free slots",
-        tostring(#mainFree), mainFree, columns, scale)
-    end
-    if #sharedFree > 0 then
-      freeCards[#freeCards + 1] = newCard("shared.empty", "Shared bank free slots", tostring(#sharedFree), sharedFree, columns, scale)
-    end
-    sections[#sections + 1] = {scope = scope, cards = freeCards}
-  end
-  local free = (data.free or 0) + (shared and shared.free or 0)
-  local capacity = (data.capacity or 0) + (shared and shared.capacity or 0)
-  if state.pinned[scope] or state.pinned.shared then free = #state.freeCells end
-  local dock = Dock.measure(screen, scope, opts or {}, state, scale, free, capacity)
-  -- The grid option limits normal wrapping width. A wider dock still gets its intrinsic one-row width where it fits.
-  local cap = math.min(maxWidth, math.max(dock.width, columns * (metrics.tile + metrics.tileGap)))
-  local body = makeBody(sections, state, cap, metrics, scale)
-  local width = math.min(math.floor(maxWidth), math.ceil(math.max(body.width, math.min(cap, dock.width))))
-  local searchHeight = state.searchOpen and 24 * scale or 0
-  local dockHeight = Dock.height(dock, width)
-  local bodySpace = math.max(1, maxHeight - searchHeight - dockHeight - metrics.gap)
-  local scroll = body.height > bodySpace
-  local scrollBar = 10 * scale
-  if scroll then
-    body = makeBody(sections, state, math.max(1, cap - scrollBar), metrics, scale)
-    width = math.min(math.floor(maxWidth), math.ceil(math.max(body.width + scrollBar, math.min(cap, dock.width))))
-    dockHeight = Dock.height(dock, width)
-    bodySpace = math.max(1, maxHeight - searchHeight - dockHeight - metrics.gap)
-  end
-  local bodyHeight = math.min(body.height, bodySpace)
-  local height = math.min(math.floor(maxHeight), math.ceil(searchHeight + bodyHeight + dockHeight + metrics.gap))
 
-  local positionKey = "stow.compact.pos." .. key
-  if state.x == nil then
-    local saved = ui.GetSetting(positionKey) or ui.GetSetting("stow.layout." .. key) or ""
-    local x, y = saved:match("^(-?%d+),(-?%d+)")
-    state.x, state.y = tonumber(x) or stockX or 100, tonumber(y) or stockY or 100
+  local dock = Dock.measure(screen, scope, opts or {}, state, scale, targets)
+  local cap = math.min(viewportW, math.max(dock.width, columns * (metrics.tile + metrics.tileGap)))
+  local positionKey = "stow.compact.anchor." .. key
+  initializeAnchor(state, positionKey, dock, sections, cap, metrics, scale, viewportW, viewportH, stockX, stockY)
+  local dockW = math.min(viewportW, math.max(1, math.floor(state.dockUnits * scale + 0.5)))
+  local dockH = math.ceil(Dock.height(dock, dockW))
+  local growth = S.get("dockGrowth")
+  local anchor = Cards.anchor(state.anchorX, state.anchorY, dockW, dockH, viewportW, viewportH, growth)
+
+  for _, section in ipairs(sections) do addFreeCard(section, state, S.get("emptySlotsCard"), columns, scale) end
+  cap = math.max(cap, dockW)
+  local gap = math.ceil(metrics.gap)
+  local room = math.max(0, math.floor(anchor.room - gap))
+  local searchH = state.searchOpen and math.ceil(24 * scale) or 0
+  if searchH > room then searchH = 0 end
+  local bodyRoom = room - searchH
+  local body = makeBody(sections, state, cap, metrics, scale, dock)
+  local scroll = bodyRoom > 0 and body.height > bodyRoom
+  local scrollBar = scroll and math.ceil(10 * scale) or 0
+  if scroll then
+    body = makeBody(sections, state, math.max(1, cap - scrollBar), metrics, scale, dock)
   end
-  local x = math.min(math.max(margin, state.x), math.max(margin, io.width - width - margin))
-  local y = math.min(math.max(margin, state.y), math.max(margin, io.height - height - margin))
-  ui.SetNextWindowPos(math.floor(x), math.floor(y), ui.Cond.Always)
-  ui.SetNextWindowSize(width, height, ui.Cond.Always)
+  local bodyH = math.min(bodyRoom, math.ceil(body.height))
+  local bodyW = bodyH > 0 and math.min(viewportW, math.ceil(body.width + scrollBar)) or 0
+  local contentH = bodyH + searchH
+  local bounds = Cards.bounds(anchor, bodyW, contentH, contentH > 0 and gap or 0, viewportW)
+
+  ui.SetNextWindowPos(bounds.x, bounds.y, ui.Cond.Always)
+  ui.SetNextWindowSize(bounds.width, bounds.height, ui.Cond.Always)
   local flags = ui.WindowFlags.NoSavedSettings | ui.WindowFlags.NoTitleBar | ui.WindowFlags.NoBackground
     | ui.WindowFlags.NoResize | ui.WindowFlags.NoMove | ui.WindowFlags.NoCollapse
     | ui.WindowFlags.NoScrollbar | ui.WindowFlags.NoScrollWithMouse
@@ -486,31 +536,37 @@ function V.compact(screen, title, key, scope, opts, onClose)
   ui.PushStyleVar(ui.StyleVar.WindowPadding, 0, 0)
   local visible = ui.Begin(title .. "###stow." .. key, nil, flags)
   ui.PopStyleVar()
-  API.windows.Placed(screen, x, y, width, height)
+  API.windows.Placed(screen, bounds.x, bounds.y, bounds.width, bounds.height)
   local close = escape.Frame(screen)
   T.ResetRightClick()
   if visible then
-    local cx, cy = ui.GetCursorScreenPos()
-    if state.searchOpen then Dock.search(state, scale, width) end
-    ui.SetCursorScreenPos(cx, cy + searchHeight)
-    if scroll then
-      ui.PushStyleVar(ui.StyleVar.ScrollbarSize, scrollBar)
-      if ui.BeginChild("##stowGrid", width, bodyHeight, false) then drawBody(body, math.max(1, width - scrollBar)) end
-      ui.EndChild()
-      ui.PopStyleVar()
-    else
-      drawBody(body, width)
+    if searchH > 0 then
+      local y = anchor.up and bounds.contentY + bodyH or bounds.contentY
+      ui.SetCursorScreenPos(anchor.x, y)
+      Dock.search(state, scale, dockW)
     end
-    ui.SetCursorScreenPos(cx, cy + searchHeight + bodyHeight + metrics.gap)
-    state.dragging = false
-    Dock.draw(dock, width)
+    if bodyH > 0 then
+      local y = anchor.up and bounds.contentY or bounds.contentY + searchH
+      ui.SetCursorScreenPos(bounds.contentX, y)
+      if scroll then
+        ui.PushStyleVar(ui.StyleVar.ScrollbarSize, scrollBar)
+        if ui.BeginChild("##stowGrid", bodyW, bodyH, false) then drawBody(body, math.max(1, bodyW - scrollBar)) end
+        ui.EndChild()
+        ui.PopStyleVar()
+      else
+        drawBody(body, math.max(1, bodyW))
+      end
+    end
+    ui.SetCursorScreenPos(anchor.x, anchor.y)
+    Dock.draw(dock, dockW)
   end
   ui.End()
   style.Pop()
-  if state.dragging and not S.get("windowLocked") and ((io.mouseDX or 0) ~= 0 or (io.mouseDY or 0) ~= 0) then
-    state.x = math.floor(math.min(math.max(margin, x + (io.mouseDX or 0)), math.max(margin, io.width - width - margin)))
-    state.y = math.floor(math.min(math.max(margin, y + (io.mouseDY or 0)), math.max(margin, io.height - height - margin)))
-    ui.SetSetting(positionKey, state.x .. "," .. state.y)
+  local dx, dy = io.mouseDX or 0, io.mouseDY or 0
+  if state.dragging and not S.get("windowLocked") and (dx ~= 0 or dy ~= 0) then
+    local moved = Cards.anchor(anchor.x + dx, anchor.y + dy, dockW, dockH, viewportW, viewportH, growth)
+    state.anchorX, state.anchorY = math.floor(moved.x), math.floor(moved.y)
+    saveAnchor(state, positionKey)
   end
   if close or state.closeRequested then
     if onClose then onClose() else API.windows.Show(screen, false) end

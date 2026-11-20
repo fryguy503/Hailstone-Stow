@@ -20,6 +20,12 @@ local bankThemes = {
   { "blue", "Blue" },
 }
 
+local growthDirections = {
+  { "auto", "Auto" },
+  { "up", "Up" },
+  { "down", "Down" },
+}
+
 local newName, renameName, presetName = "", "", ""
 local selectedCategory, renameCategory, renameLabel, selectedPreset
 
@@ -106,8 +112,12 @@ local function drawAppearance(S)
   slider(S, "columns", "Columns", 4, 16)
   slider(S, "size", "Item size", 24, 60, "%d px")
   selectSetting(S, "bankTheme", "Bank color", bankThemes)
+  selectSetting(S, "dockGrowth", "Cards grow", growthDirections)
+  tip("Auto chooses the side with more room when you place the dock.")
   toggle(S, "hideEmptyGroups", "Hide empty categories")
   toggle(S, "compressEmpty", "Combine empty slots")
+  toggle(S, "emptySlotsCard", "Show Empty Slots cards",
+         "With Combine empty slots on, show one drop tile first in Bags and each bank section.")
   toggle(S, "showBagBar", "Show bags when opening Stow")
   toggle(S, "windowLocked", "Lock window position")
   toggle(S, "qualityColors", "Color item borders", "Color item borders by EverQuest item flags.")

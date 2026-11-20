@@ -12,24 +12,35 @@ local views = {
   {id = "bags", name = "By physical bag"},
 }
 
+local targetNames = {
+  inventory = {label = "Inventory"},
+  bank = {label = "Personal bank", long = "Personal ", short = "P "},
+  shared = {label = "Shared bank", long = "Shared ", short = "S "},
+}
+
 local function value(setting)
   if type(setting) == "function" then return setting() end
   return setting
 end
 
-function D.measure(screen, scope, opts, state, scale, free, capacity)
+function D.measure(screen, scope, opts, state, scale, targets)
   local lineH = select(2, T.TextSize("Ag", T.font.small))
   local h = math.max(18 * scale, lineH + 4 * scale)
   local padding, gap = 3 * scale, 2 * scale
   local dock = {screen = screen, scope = scope, opts = opts, state = state, scale = scale,
-    free = free or 0, capacity = capacity or 0, row = h, padding = padding, gap = gap,
-    height = h + padding * 2, width = padding * 2 - gap, tokens = {}}
-  local function add(record)
+    row = h, padding = padding, gap = gap, width = padding * 2 - gap, tokens = {}}
+  local function add(record, right)
+    record.right = right
     dock.tokens[#dock.tokens + 1] = record
     dock.width = dock.width + record.width + gap
   end
   local function measure(text)
     return T.TextSize(text, T.font.small)
+  end
+  local function expandedText(record, text)
+    record.expandedText = text
+    record.expansion = measure(text) - measure(record.text)
+    return record
   end
   local title = state.title or "Stow"
   add({id = "move", text = title, width = measure(title) + 15 * scale})
@@ -37,37 +48,73 @@ function D.measure(screen, scope, opts, state, scale, free, capacity)
   local purse = scope == "inventory" and {API.character.Money()} or nil
   local function coin(id, denomination, shared)
     local count = tonumber((API.windows.Text(coinWindow, id))) or (purse and purse[denomination]) or 0
-    local text = (shared and "S " or "") .. T.Thousands(count)
-    add({id = id, window = coinWindow, count = count, width = measure(text) + 13 * scale,
-      text = text, denomination = denomination, shared = shared})
+    local amount = T.Thousands(count)
+    local text = shared and "S " .. amount or amount
+    local record = {id = id, window = coinWindow, count = count, width = measure(text) + 13 * scale,
+      text = text, denomination = denomination, shared = shared}
+    if shared then expandedText(record, "Shared " .. amount) end
+    add(record)
   end
   for i, id in ipairs(opts.coins or {}) do coin(id, i) end
   if opts.sharedCoin then coin(opts.sharedCoin, 1, true) end
   local done, total, job = API.inventory.ItemJob()
   dock.job = done and total and {done = done, total = total, kind = job} or nil
-  add({id = "search", width = h})
-  if scope == "inventory" then add({id = "organize", width = h}) end
+  add({id = "search", width = h}, true)
+  if scope == "inventory" then add({id = "organize", width = h}, true) end
   for _, id in ipairs({"stack", "bags", "options"}) do
-    add({id = id, width = h})
+    add({id = id, width = h}, true)
   end
-  local freeText = T.Thousands(dock.free)
-  add({id = "empty", text = freeText, width = measure(freeText) + 14 * scale})
-  add({id = "close", width = h})
+  for _, target in ipairs(targets) do
+    local name = targetNames[target.scope]
+    local amount = T.Thousands(target.free)
+    local text = (name.short or "") .. amount
+    local record = {id = "empty", target = target, text = text, width = measure(text) + 14 * scale}
+    if name.long then expandedText(record, name.long .. amount) end
+    add(record, true)
+  end
+  add({id = "close", width = h}, true)
   return dock
 end
 
--- Pack a second row only when the available width cannot fit the dock beside the cards.
+-- Pack compact labels first, then expand labels within each row's unused space.
+-- The title and coins start at the left. Each row of tools ends at the right.
 local function place(dock, width, visit)
-  local x, y = dock.padding, dock.padding
-  local limit = math.max(1, width - dock.padding * 2)
-  for _, token in ipairs(dock.tokens) do
-    local w = math.min(limit, token.width)
-    if x > dock.padding and x + w > width - dock.padding + 0.5 then
-      x, y = dock.padding, y + dock.row + dock.gap
+  local gap = dock.gap
+  local pad = math.min(dock.padding, math.max(0, (width - 1) / 2))
+  local limit = math.max(1, width - pad * 2)
+  local y, first, used, right = dock.padding, 1, 0, 0
+  local function row(last)
+    if not visit then return end
+    local expand = {}
+    local spare = limit - used
+    for i = first, last do
+      local token = dock.tokens[i]
+      local extra = token.expansion
+      if extra and extra <= spare and token.width <= limit then
+        expand[i] = extra
+        spare = spare - extra
+        if token.right then right = right + extra end
+      end
     end
-    if visit then visit(token, x, y, w) end
-    x = x + w + dock.gap
+    local x, toolX = pad, pad + limit - right
+    for i = first, last do
+      local token = dock.tokens[i]
+      local w = math.min(limit, token.width) + (expand[i] or 0)
+      visit(token, token.right and toolX or x, y, w, expand[i] and token.expandedText or token.text)
+      if token.right then toolX = toolX + w + gap else x = x + w + gap end
+    end
   end
+  for i, token in ipairs(dock.tokens) do
+    local w = math.min(limit, token.width)
+    if used > 0 and used + gap + w > limit then
+      row(i - 1)
+      first, used, right = i, 0, 0
+      y = y + dock.row + gap
+    end
+    used = used > 0 and used + gap + w or w
+    if token.right then right = right > 0 and right + gap + w or w end
+  end
+  row(#dock.tokens)
   return y + dock.row + dock.padding
 end
 
@@ -80,7 +127,7 @@ local function label(x, y, h, text, color)
   T.Text(x, y + (h - th) / 2, text, color, T.font.small)
 end
 
-local function drawCoin(dock, token, x, y, w)
+local function drawCoin(dock, token, x, y, w, text)
   local s, h = dock.scale, dock.row
   local click = ui.InvisibleButton("##stowCoin." .. token.id, w, h)
   local hover = ui.IsItemHovered()
@@ -88,7 +135,7 @@ local function drawCoin(dock, token, x, y, w)
   local accent = coin[3]
   if hover then ui.DrawRectFilled(x, y, x + w, y + h, accent[1], accent[2], accent[3], 0.18, 3 * s) end
   ui.DrawCircleFilled(x + 5 * s, y + h / 2, 3 * s, accent[1], accent[2], accent[3], 1)
-  label(x + 10 * s, y, h, T.Fit(token.text, math.max(1, w - 11 * s), T.font.small),
+  label(x + 10 * s, y, h, T.Fit(text, math.max(1, w - 11 * s), T.font.small),
     token.count > 0 and C.text or C.muted)
   if hover then
     local hint = value(dock.opts.coinHint) or "Click to pick up or deposit coin (Shift: all)"
@@ -129,10 +176,10 @@ local function glyph(id, x, y, c, s)
   end
 end
 
-local function availableSlots(state, preview)
+local function availableSlots(cells, preview)
   local first, fallback, compatible, unknown
   compatible, unknown = 0, 0
-  for _, cell in ipairs(state.dropCells or state.freeCells or {}) do
+  for _, cell in ipairs(cells) do
     local fit = S.canPlace(cell)
     if fit == true then
       first, compatible = first or cell, compatible + 1
@@ -144,40 +191,63 @@ local function availableSlots(state, preview)
   return first or fallback, compatible, unknown
 end
 
-local function emptyButton(dock, token, x, y, w, hit, hover)
-  local state, s, h = dock.state, dock.scale, dock.row
+function D.drawTarget(dock, target, x, y, w, h, asTile)
+  local state, s = dock.state, dock.scale
+  local scope, cells = target.scope, target.cells
+  local prefix = asTile and "##stowSlot.empty." or "##stowDock.empty."
+  ui.SetCursorScreenPos(x, y)
+  local hit = ui.InvisibleButton(prefix .. scope, w, h)
+  local hover = ui.IsItemHovered()
   local held = (hover or hit) and API.inventory.Item(API.inventory.CursorSlot)
-  local expands = S.get("compressEmpty") and #(state.freeCells or {}) > 0
-  local target, compatible, unknown
-  if held then target, compatible, unknown = availableSlots(state, hover) end
-  local color = held and (target and C.good or C.danger) or C.accent
-  if hover or (expands and state.showFree) then
-    ui.DrawRectFilled(x, y, x + w, y + h, color[1], color[2], color[3], 0.16, 3 * s)
+  local expands = S.get("compressEmpty") and #cells > 0
+  local destination, compatible, unknown
+  if held then destination, compatible, unknown = availableSlots(cells, hover) end
+  local scopeColor = scope == "shared" and C.platinum or C.accent
+  local color = held and (destination and C.good or C.danger) or scopeColor
+  if asTile or hover or (expands and state.expandedFree[scope]) then
+    local alpha = (hover or state.expandedFree[scope]) and 0.16 or 0.09
+    ui.DrawRectFilled(x, y, x + w, y + h, color[1], color[2], color[3], alpha, 3 * s)
   end
-  local mid = y + h / 2
-  ui.DrawRect(x + 3 * s, mid - 3 * s, x + 9 * s, mid + 3 * s, color[1], color[2], color[3], 0.9, s, 1)
-  label(x + 12 * s, y, h, T.Fit(token.text, math.max(1, w - 13 * s), T.font.small), color)
+  local amount = T.Thousands(target.free)
+  local name = targetNames[scope]
+  if asTile then
+    ui.DrawRect(x, y, x + w, y + h, color[1], color[2], color[3], 0.55, 3 * s, 1)
+    local text = T.Fit(amount, math.max(1, w - 4 * s), T.font.small)
+    local _, th = T.TextSize(text, T.font.small)
+    T.Text(x + w / 2, y + (h - th) / 2, text, color, T.font.small, "center")
+  else
+    local mid = y + h / 2
+    ui.DrawRect(x + 3 * s, mid - 3 * s, x + 9 * s, mid + 3 * s, color[1], color[2], color[3], 0.9, s, 1)
+    local text = (name.short or "") .. amount
+    local avail = math.max(1, w - 14 * s)
+    if name.long and T.TextSize(name.long .. amount, T.font.small) <= avail then text = name.long .. amount end
+    label(x + 12 * s, y, h, T.Fit(text, avail, T.font.small), color)
+  end
   if hover then
-    local message = string.format("%s / %s slots free", token.text, T.Thousands(dock.capacity))
+    local message = string.format("%s\n%s / %s slots free", name.label, amount, T.Thousands(target.capacity))
     if held then
-      if API.inventory.CanPlace and (compatible > 0 or unknown == 0) then
-        message = message .. "\n" .. compatible .. " compatible slots" .. (state.dropLabel or "")
+      if API.inventory.CanPlace then
+        if unknown > 0 then
+          message = message .. string.format("\n%d compatible · %d unchecked", compatible, unknown)
+        else
+          message = message .. "\n" .. compatible .. " compatible slots"
+        end
       end
-      if target then message = message .. "\nClick to place the held item" end
+      if destination then message = message .. "\nClick to place the held item" end
     end
     if expands then message = message .. "\nRight-click to show or hide individual slots" end
     ui.SetTooltip(message)
     if expands and ui.IsMouseClicked(ui.Mouse.Right) then
       T.TakeRightClick()
-      state.showFree = not state.showFree
+      state.expandedFree[scope] = not state.expandedFree[scope]
       return
     end
   end
   if hit then
     if held then
-      if target then S.click(target, "left") end
+      if destination then S.click(destination, "left") end
     elseif expands then
-      state.showFree = not state.showFree
+      state.expandedFree[scope] = not state.expandedFree[scope]
     end
   end
 end
@@ -186,7 +256,6 @@ local function drawControl(dock, token, x, y, w)
   local id, state, h, s = token.id, dock.state, dock.row, dock.scale
   local click = ui.InvisibleButton("##stowDock." .. id, w, h)
   local hover = ui.IsItemHovered()
-  if id == "empty" then return emptyButton(dock, token, x, y, w, click, hover) end
   local active = (id == "search" and state.searchOpen) or (id == "bags" and state.showBags) or (id == "stack" and dock.job)
   local busy = id == "organize" and dock.job
   local color = busy and C.faint or ((active or hover) and C.accent or C.muted)
@@ -276,10 +345,15 @@ function D.draw(dock, width)
   ui.DrawRectFilled(x, y, x + width, y + h, C.panel[1], C.panel[2], C.panel[3], 0.97, 4 * s)
   ui.DrawRect(x, y, x + width, y + h, C.accent[1], C.accent[2], C.accent[3], 0.28, 4 * s, 1)
   dock.state.dragging = false
-  place(dock, width, function(token, dx, dy, w)
-    ui.SetCursorScreenPos(x + dx, y + dy)
-    if token.denomination then drawCoin(dock, token, x + dx, y + dy, w)
-    else drawControl(dock, token, x + dx, y + dy, w) end
+  place(dock, width, function(token, dx, dy, w, text)
+    local tx, ty = x + dx, y + dy
+    if token.target then
+      D.drawTarget(dock, token.target, tx, ty, w, dock.row)
+    else
+      ui.SetCursorScreenPos(tx, ty)
+      if token.denomination then drawCoin(dock, token, tx, ty, w, text)
+      else drawControl(dock, token, tx, ty, w) end
+    end
   end)
   ui.SetCursorPos(cx, cy)
   ui.Dummy(width, h)

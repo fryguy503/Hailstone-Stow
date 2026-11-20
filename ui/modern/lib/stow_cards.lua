@@ -1,5 +1,33 @@
 local M = {}
 
+local function clamp(value, low, high)
+  return math.max(low, math.min(value, high))
+end
+
+-- Convert the saved top-left of the old combined window to the position of its dock.
+function M.migrate(x, y, width, height, dockHeight, viewportW, viewportH, margin)
+  local oldX = clamp(x, margin, math.max(margin, viewportW - width - margin))
+  local oldY = clamp(y, margin, math.max(margin, viewportH - height - margin))
+  return oldX, oldY + math.max(0, height - dockHeight)
+end
+
+function M.anchor(x, y, width, height, viewportW, viewportH, growth)
+  x = clamp(x, 0, math.max(0, viewportW - width))
+  y = clamp(y, 0, math.max(0, viewportH - height))
+  local below = math.max(0, viewportH - y - height)
+  local up = growth == "up" or (growth ~= "down" and y >= below)
+  return {x = x, y = y, width = width, height = height, up = up, room = up and y or below}
+end
+
+function M.bounds(dock, width, height, gap, viewportW)
+  local x = clamp(dock.x, 0, math.max(0, viewportW - width))
+  local y = dock.up and dock.y - gap - height or dock.y + dock.height + gap
+  local left, top = math.min(x, dock.x), math.min(y, dock.y)
+  local right = math.max(x + width, dock.x + dock.width)
+  local bottom = math.max(y + height, dock.y + dock.height)
+  return {x = left, y = top, width = right - left, height = bottom - top, contentX = x, contentY = y}
+end
+
 -- Stable, ordered wrapping. Each card keeps its own grid width and row count.
 function M.pack(cards, limit, metrics)
   local pad, gap, step = metrics.pad, metrics.gap, metrics.tile + metrics.tileGap

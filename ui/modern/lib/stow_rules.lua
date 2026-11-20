@@ -17,6 +17,7 @@ M.defaults = {
   enabled = true, replaceBank = true, replaceBags = true,
   inventoryMode = "grouped", bankMode = "grouped", columns = 10, size = 31,
   hideEmptyGroups = true, compressEmpty = true, windowLocked = false, showBagBar = false,
+  dockGrowth = "auto", emptySlotsCard = false,
   qualityColors = true, searchDim = true, bankFiltering = true, bankTheme = "default",
   visualSort = "name", bankSort = "name", newItems = true, customFirst = true,
   autoSell = false, tidyAfterLoot = false,
@@ -27,6 +28,7 @@ local sorts = {name = true, type = true, value = true, id = true, slot = true}
 local choices = {
   inventoryMode = modes, bankMode = modes, visualSort = sorts, bankSort = sorts,
   bankTheme = {default = true, slate = true, blue = true},
+  dockGrowth = {auto = true, up = true, down = true},
 }
 
 function M.setting(key, value)
@@ -46,7 +48,7 @@ function M.setting(key, value)
 end
 
 M.presetKeys = {
-  "inventoryMode", "bankMode", "columns", "size", "hideEmptyGroups", "compressEmpty", "showBagBar",
+  "inventoryMode", "bankMode", "columns", "size", "hideEmptyGroups", "compressEmpty", "emptySlotsCard", "showBagBar",
   "qualityColors", "searchDim", "bankFiltering", "bankTheme", "visualSort", "bankSort", "newItems", "customFirst",
 }
 

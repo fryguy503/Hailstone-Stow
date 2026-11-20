@@ -28,4 +28,20 @@ end
 
 local empty = Cards.pack({}, 385, metrics)
 assert(empty.width == 0 and empty.height == 0 and #empty.boxes == 0, "no empty bounding panel")
+
+local dock = Cards.anchor(800, 480, 300, 30, 1000, 600, "auto")
+assert(dock.x == 700 and dock.y == 480 and dock.up and dock.room == 480, "lower-right dock may sit flush and grows up")
+local small = Cards.bounds(dock, 300, 90, 5, 1000)
+local large = Cards.bounds(dock, 440, 240, 5, 1000)
+assert(small.y == 385 and large.y == 235 and small.y + small.height == large.y + large.height,
+  "expansion changes the top edge while keeping the toolbar fixed")
+assert(large.x == 560 and large.x + large.width == 1000, "a wider grid fits the screen without changing the dock anchor")
+local high = Cards.anchor(-1, 0, 300, 30, 1000, 600, "auto")
+assert(high.x == 0 and not high.up and high.room == 570, "upper-left dock may sit flush and grows down")
+local down = Cards.anchor(800, 480, 300, 30, 1000, 600, "down")
+assert(not down.up and down.room == 90, "manual down uses only the space below the dock")
+local up = Cards.anchor(-1, 0, 300, 30, 1000, 600, "up")
+assert(up.up and up.room == 0, "manual up at the top keeps the dock reachable without a body")
+local x, y = Cards.migrate(820, 500, 300, 200, 30, 1000, 600, 8)
+assert(x == 692 and y == 562, "migration preserves the old bottom-aligned dock position")
 print("Stow card geometry tests passed")

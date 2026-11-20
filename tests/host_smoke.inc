@@ -32,9 +32,27 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
     toolbox.contents.push_back({0, part});
     auto banked = bag_item(5004, "Bank Bag", 0);
     banked.slot = {net::kInvBank, 0, -1, -1};
+    banked.bag_slots = 1;
+    banked.bag_size = 4;
+    auto personal_item = make_item(5012, "Personal bank item", 0);
+    personal_item.slot = {net::kInvBank, 0, 0, -1};
+    personal_item.no_rent = 255;
+    banked.contents.push_back({0, personal_item});
     auto shared = bag_item(5005, "Shared Bag", 0);
     shared.slot = {net::kInvSharedBank, 0, -1, -1};
-    config.characters[0].inventory.insert(config.characters[0].inventory.end(), {carried, quest, toolbox, banked, shared});
+    shared.bag_slots = 1;
+    shared.bag_size = 4;
+    auto shared_item = make_item(5013, "Shared bank item", 0);
+    shared_item.slot = {net::kInvSharedBank, 0, 0, -1};
+    shared.contents.push_back({0, shared_item});
+    auto transfer = make_item(5014, "Bank routing token", 28);
+    transfer.no_rent = 255;
+    config.characters[0].inventory.insert(config.characters[0].inventory.end(), {carried, quest, toolbox, transfer, banked, shared});
+    for (std::int16_t slot = 1; slot < 24; ++slot) {
+        auto filler = make_item(5200 + slot, "Bank filler " + std::to_string(slot), slot);
+        filler.slot = {net::kInvBank, slot, -1, -1};
+        config.characters[0].inventory.push_back(std::move(filler));
+    }
 
     ScratchDir scratch("stow_host_smoke");
     Rig rig(std::move(config), quick_options());
@@ -43,8 +61,13 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
     put_coin_away(conn);
     auto character = conn.character_name();
     for (char& c : character) c = ascii_lower(c);
-    const auto old_preference = "stow.stow-test%7C" + character + ".option.replaceInventory";
-    std::ofstream(scratch.path() / "settings.txt") << "plugin.script:stow." << old_preference << "=1\n";
+    const auto settings_prefix = "stow.stow-test%7C" + character + ".option.";
+    const auto old_preference = settings_prefix + "replaceInventory";
+    std::ofstream(scratch.path() / "settings.txt")
+        << "plugin.script:stow." << old_preference << "=1\n"
+        << "plugin.script:stow." << settings_prefix << "dockGrowth=up\n"
+        << "plugin.script:stow.stow.compact.anchor.allBags=180,440\n"
+        << "plugin.script:stow.stow.compact.anchor.bank=520,510\n";
     auto* ctx = ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
     unsigned char* pixels = nullptr;
@@ -85,23 +108,49 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
         auto run = [&](const std::string& body) {
             return lua.run_for_test("script:stow", "local S = dofile('lib/stow_model.lua') " + body);
         };
-        auto click_item = [&](ImGuiWindow& window, const char* label, float begin, float end, bool from_bottom) {
+        auto locate_item = [&](ImGuiWindow& window, const char* label, float begin, float end, bool from_bottom)
+            -> std::optional<ImVec2> {
             const auto target = window.GetID(label);
             auto& io = ImGui::GetIO();
             for (float offset = begin; offset < end; offset += 5.f) {
                 const float y = window.Pos.y + (from_bottom ? window.Size.y - offset : offset);
                 for (float from_left = 8.f; from_left <= window.Size.x - 3.f; from_left += 7.f) {
-                    io.AddMousePosEvent(window.Pos.x + from_left, y);
+                    const ImVec2 point(window.Pos.x + from_left, y);
+                    io.AddMousePosEvent(point.x, point.y);
                     frames(1);
-                    if (ctx->HoveredId != target) continue;
-                    io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
-                    frames(1);
-                    io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
-                    frames(1);
-                    return true;
+                    if (ctx->HoveredId == target) return point;
                 }
             }
-            return false;
+            return std::nullopt;
+        };
+        auto hover = [&](const ImVec2& point) {
+            ImGui::GetIO().AddMousePosEvent(point.x, point.y);
+            frames(1);
+        };
+        auto click_item = [&](ImGuiWindow& window, const char* label, float begin, float end, bool from_bottom,
+                              int button = ImGuiMouseButton_Left) {
+            if (!locate_item(window, label, begin, end, from_bottom)) return false;
+            auto& io = ImGui::GetIO();
+            io.AddMouseButtonEvent(button, true);
+            frames(1);
+            io.AddMouseButtonEvent(button, false);
+            frames(1);
+            return true;
+        };
+        auto drag_dock = [&](ImGuiWindow& window, bool from_bottom, const ImVec2& destination) {
+            if (!locate_item(window, "##stowDock.move", 3.f, 38.f, from_bottom)) return false;
+            auto& io = ImGui::GetIO();
+            io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+            frames(1);
+            io.AddMousePosEvent(destination.x, destination.y);
+            frames(1);
+            io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+            frames(2);
+            return true;
+        };
+        auto bank_item_id = [&](std::int16_t type, std::int16_t slot, std::int16_t sub = -1) {
+            const auto* item = conn.inventory().at({type, slot, sub, -1});
+            return item ? item->id : 0u;
         };
 
         frames();
@@ -125,6 +174,10 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
         auto* aggregated_bags = ImGui::FindWindowByName("Stow Bags###stow.allBags");
         REQUIRE(aggregated_bags != nullptr);
         CHECK(aggregated_bags->Active);
+        const auto move_id = aggregated_bags->GetID("##stowDock.move");
+        const auto stable_anchor = locate_item(*aggregated_bags, "##stowDock.move", 7.f, 36.f, true);
+        REQUIRE(stable_anchor.has_value());
+        const auto up_top = aggregated_bags->Pos.y;
         const auto expanded = aggregated_bags->Size;
         CHECK(expanded.x < 480.f);
         CHECK(expanded.y < 420.f);
@@ -132,10 +185,30 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
         frames();
         CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "1");
         CHECK(aggregated_bags->Size.y < expanded.y);
+        CHECK(aggregated_bags->Pos.y > up_top);
+        hover(*stable_anchor);
+        CHECK(ctx->HoveredId == move_id);
         REQUIRE(click_item(*aggregated_bags, "##heading.inventory.new", 6.f, 70.f, false));
         frames();
         CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "0");
         CHECK(aggregated_bags->Size.y == doctest::Approx(expanded.y));
+        CHECK(aggregated_bags->Pos.y == doctest::Approx(up_top));
+        REQUIRE(run("assert(S.set('dockGrowth','down')); return 'ok'") == "ok");
+        frames();
+        const auto down_top = aggregated_bags->Pos.y;
+        CHECK(down_top > up_top);
+        hover(*stable_anchor);
+        CHECK(ctx->HoveredId == move_id);
+        REQUIRE(click_item(*aggregated_bags, "##heading.inventory.new", 24.f, 100.f, false));
+        frames();
+        CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "1");
+        CHECK(aggregated_bags->Pos.y == doctest::Approx(down_top));
+        CHECK(aggregated_bags->Size.y < expanded.y);
+        REQUIRE(click_item(*aggregated_bags, "##heading.inventory.new", 24.f, 100.f, false));
+        frames();
+        CHECK(aggregated_bags->Pos.y == doctest::Approx(down_top));
+        REQUIRE(run("assert(S.set('dockGrowth','up')); return 'ok'") == "ok");
+        frames();
         const auto platinum = conn.inventory_coin(0);
         REQUIRE(platinum > 0);
         conn.inventory_money_button(0, 1, nullptr);
@@ -175,6 +248,17 @@ end
         REQUIRE(rig.until([&] { return !conn.item_job().has_value(); }));
         CHECK(MockEqServer::count(rig.server.zone_log, net::Op::MoveItem) > moves_before_sort);
         CHECK(id_at(conn, 26, 0) == part.id);
+
+        REQUIRE(run("assert(S.set('dockGrowth','down')); return 'ok'") == "ok");
+        frames();
+        REQUIRE(drag_dock(*aggregated_bags, false, {-500.f, -500.f}));
+        CHECK(aggregated_bags->Pos.x == doctest::Approx(0.f));
+        CHECK(aggregated_bags->Pos.y == doctest::Approx(0.f));
+        REQUIRE(run("assert(S.set('dockGrowth','up')); return 'ok'") == "ok");
+        frames();
+        REQUIRE(drag_dock(*aggregated_bags, true, {1800.f, 1300.f}));
+        CHECK(aggregated_bags->Pos.x + aggregated_bags->Size.x == doctest::Approx(ImGui::GetIO().DisplaySize.x));
+        CHECK(aggregated_bags->Pos.y + aggregated_bags->Size.y == doctest::Approx(ImGui::GetIO().DisplaySize.y));
 
         CHECK(run(R"lua(
 local name, _, combine, scope = hs.UI.inventory.BagInfo("Bag2")
@@ -254,10 +338,77 @@ return tostring(name == "Crafting Toolbox" and combine and scope == "inventory")
         REQUIRE(conn.activate_bank(rig.server.config.own_spawn_id));
         api.show("BigBankWnd", true);
         frames();
-        const auto* bank_window = ImGui::FindWindowByName("Stow Bank###stow.bank");
+        auto* bank_window = ImGui::FindWindowByName("Stow Bank###stow.bank");
         REQUIRE(bank_window != nullptr);
         CHECK(bank_window->Size.y < 420.f);
         CHECK(run("local v=S.view('shared', 'bags', ''); return tostring(v.live and v.bags[1].place=='s:0')") == "true");
+        auto free_counts = [&](const char* expected) {
+            CHECK(run("return S.view('bank', 'bags').free .. ':' .. S.view('shared', 'bags').free") == std::string(expected));
+        };
+        auto bank_counter = [&](const char* id, int button = ImGuiMouseButton_Left) {
+            return click_item(*bank_window, id, 8.f, 53.f, true, button);
+        };
+        auto bank_slot = [&](const char* id) {
+            return click_item(*bank_window, id, 5.f, bank_window->Size.y - 23.f, false);
+        };
+        auto bank_slot_visible = [&](const char* id) {
+            return locate_item(*bank_window, id, 5.f, bank_window->Size.y - 23.f, false).has_value();
+        };
+        free_counts("0:1");
+        conn.click_slot(at(28), false, false);
+        REQUIRE(id_at(conn, net::kSlotCursor) == transfer.id);
+        REQUIRE(run("return tostring(hs.UI.inventory.CanPlace('s:1'))") == "true");
+        REQUIRE(bank_counter("##stowDock.empty.bank"));
+        CHECK(id_at(conn, net::kSlotCursor) == transfer.id);
+        CHECK(bank_item_id(net::kInvSharedBank, 1) == 0u);
+        REQUIRE(bank_counter("##stowDock.empty.shared"));
+        CHECK(id_at(conn, net::kSlotCursor) == 0u);
+        CHECK(bank_item_id(net::kInvSharedBank, 1) == transfer.id);
+        free_counts("0:0");
+        REQUIRE(bank_slot("##b:0:0"));
+        REQUIRE(id_at(conn, net::kSlotCursor) == personal_item.id);
+        free_counts("1:0");
+        REQUIRE(bank_counter("##stowDock.empty.shared"));
+        CHECK(id_at(conn, net::kSlotCursor) == personal_item.id);
+        CHECK(bank_item_id(net::kInvBank, 0, 0) == 0u);
+        REQUIRE(bank_counter("##stowDock.empty.bank"));
+        CHECK(id_at(conn, net::kSlotCursor) == 0u);
+        CHECK(bank_item_id(net::kInvBank, 0, 0) == personal_item.id);
+
+        REQUIRE(bank_slot("##b:0:0"));
+        REQUIRE(id_at(conn, net::kSlotCursor) == personal_item.id);
+        conn.click_slot(at(29), false, false);
+        REQUIRE(id_at(conn, 29) == personal_item.id);
+        REQUIRE(bank_slot("##s:1"));
+        REQUIRE(id_at(conn, net::kSlotCursor) == transfer.id);
+        free_counts("1:1");
+        REQUIRE(bank_counter("##stowDock.empty.bank", ImGuiMouseButton_Right));
+        CHECK(id_at(conn, net::kSlotCursor) == transfer.id);
+        CHECK(bank_slot_visible("##b:0:0"));
+        CHECK_FALSE(bank_slot_visible("##s:1"));
+        REQUIRE(bank_counter("##stowDock.empty.shared", ImGuiMouseButton_Right));
+        CHECK(bank_slot_visible("##b:0:0"));
+        CHECK(bank_slot_visible("##s:1"));
+        REQUIRE(bank_counter("##stowDock.empty.bank", ImGuiMouseButton_Right));
+        CHECK_FALSE(bank_slot_visible("##b:0:0"));
+        REQUIRE(bank_slot("##s:1"));
+        CHECK(id_at(conn, net::kSlotCursor) == 0u);
+        CHECK(bank_item_id(net::kInvSharedBank, 1) == transfer.id);
+        conn.click_slot(at(29), false, false);
+        REQUIRE(id_at(conn, net::kSlotCursor) == personal_item.id);
+        REQUIRE(bank_counter("##stowDock.empty.bank", ImGuiMouseButton_Right));
+        REQUIRE(bank_slot("##b:0:0"));
+        CHECK(id_at(conn, net::kSlotCursor) == 0u);
+        CHECK(bank_item_id(net::kInvBank, 0, 0) == personal_item.id);
+
+        REQUIRE(bank_slot("##b:0:0"));
+        REQUIRE(id_at(conn, net::kSlotCursor) == personal_item.id);
+        REQUIRE(bank_counter("##stowDock.empty.bank", ImGuiMouseButton_Right));
+        REQUIRE(run("assert(S.set('emptySlotsCard', true)); return 'ok'") == "ok");
+        frames();
+        REQUIRE(bank_slot("##stowSlot.empty.bank"));
+        CHECK(id_at(conn, net::kSlotCursor) == 0u);
+        CHECK(bank_item_id(net::kInvBank, 0, 0) == personal_item.id);
         CHECK(run("S.applyPreset('crafting'); return S.get('bankMode')") == "bags");
         frames();
 
