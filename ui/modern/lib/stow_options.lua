@@ -1,7 +1,7 @@
 local O = {}
 
 local views = {
-  { "grouped", "Grouped" },
+  { "grouped", "Category cards" },
   { "combined", "Combined" },
   { "bags", "By physical bag" },
 }
@@ -109,7 +109,7 @@ local function drawAppearance(S)
   selectSetting(S, "bankTheme", "Bank color", bankThemes)
   toggle(S, "hideEmptyGroups", "Hide empty categories")
   toggle(S, "compressEmpty", "Combine empty slots")
-  toggle(S, "showBagBar", "Show physical bags")
+  toggle(S, "showBagBar", "Show bags when opening Stow")
   toggle(S, "windowLocked", "Lock window position")
   toggle(S, "qualityColors", "Color item borders", "Color item borders by EverQuest item flags.")
   toggle(S, "searchDim", "Dim items outside search results", "Turn this off to hide items that do not match.")

@@ -1,6 +1,7 @@
 // Include from Hailstone's tests/inventory_manager_ui_test.cpp to run with the real UI, mock server and ImGui.
 #include "plugin/policy.h"
 #include "plugin/ui_bridge.h"
+#include "net/trade_packets.h"
 
 TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
     const fs::path stow = fs::absolute(fs::path(__FILE__).parent_path().parent_path());
@@ -14,6 +15,11 @@ TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
     auto material = make_item(5002, "Crafting Thread", 24);
     material.tradeskills = 1;
     carried.contents.push_back({0, material});
+    for (std::uint32_t sub = 1; sub < 14; ++sub) {
+        auto component = make_item(5100 + sub, "Crafting Component " + std::to_string(sub), 24);
+        component.tradeskills = 1;
+        carried.contents.push_back({sub, std::move(component)});
+    }
     auto quest = make_item(5003, "Quest Seal", 25);
     quest.quest_item = 1;
     auto banked = bag_item(5004, "Bank Bag", 0);
@@ -67,10 +73,47 @@ TEST_CASE("Stow add-on: real host loads inventory, bank, and bag presenters") {
         auto run = [&](const std::string& body) {
             return lua.run_for_test("script:stow", "local S = dofile('lib/stow_model.lua') " + body);
         };
+        auto click_item = [&](ImGuiWindow& window, const char* label, float begin, float end, bool from_bottom) {
+            const auto target = window.GetID(label);
+            auto& io = ImGui::GetIO();
+            for (float offset = begin; offset < end; offset += 5.f) {
+                const float y = window.Pos.y + (from_bottom ? window.Size.y - offset : offset);
+                for (float from_left = 8.f; from_left <= window.Size.x - 3.f; from_left += 7.f) {
+                    io.AddMousePosEvent(window.Pos.x + from_left, y);
+                    frames(1);
+                    if (ctx->HoveredId != target) continue;
+                    io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+                    frames(1);
+                    io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+                    frames(1);
+                    return true;
+                }
+            }
+            return false;
+        };
 
         api.show("InventoryWindow", true);
         frames();
-        REQUIRE(ImGui::FindWindowByName("Stow###stow.inventory") != nullptr);
+        auto* inventory_window = ImGui::FindWindowByName("Stow###stow.inventory");
+        REQUIRE(inventory_window != nullptr);
+        const auto expanded = inventory_window->Size;
+        CHECK(expanded.x < 480.f);
+        CHECK(expanded.y < 420.f);
+        REQUIRE(click_item(*inventory_window, "##heading.inventory.new", 6.f, 70.f, false));
+        frames();
+        CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "1");
+        CHECK(inventory_window->Size.y < expanded.y);
+        REQUIRE(click_item(*inventory_window, "##heading.inventory.new", 6.f, 70.f, false));
+        frames();
+        CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "0");
+        CHECK(inventory_window->Size.y == doctest::Approx(expanded.y));
+        const auto platinum = conn.inventory_coin(0);
+        REQUIRE(platinum > 0);
+        conn.inventory_money_button(0, 1, nullptr);
+        REQUIRE(conn.cursor_coins()[net::kCoinPlatinum] == 1u);
+        REQUIRE(click_item(*inventory_window, "##stowCoin.IW_Money0", 14.f, 36.f, true));
+        CHECK(conn.cursor_coins()[net::kCoinPlatinum] == 0u);
+        CHECK(conn.inventory_coin(0) == platinum);
         REQUIRE(run(R"lua(
 assert(S.actions())
 assert(S.resetNew())
@@ -93,7 +136,9 @@ end
         REQUIRE(conn.activate_bank(rig.server.config.own_spawn_id));
         api.show("BigBankWnd", true);
         frames();
-        REQUIRE(ImGui::FindWindowByName("Stow Bank###stow.bank") != nullptr);
+        const auto* bank_window = ImGui::FindWindowByName("Stow Bank###stow.bank");
+        REQUIRE(bank_window != nullptr);
+        CHECK(bank_window->Size.y < 420.f);
         CHECK(run("local v=S.view('shared', 'bags', ''); return tostring(v.live and v.bags[1].place=='s:0')") == "true");
         CHECK(run("S.applyPreset('crafting'); return S.get('bankMode')") == "bags");
         frames();

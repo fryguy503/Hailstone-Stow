@@ -1,6 +1,6 @@
 # Hailstone Stow
 
-Stow adds grouped inventory, bag, and bank windows to Hailstone. It uses the Modern interface and works with interfaces that inherit Modern’s window layout.
+Stow adds compact inventory, bag, and bank windows to Hailstone. Category cards wrap and resize to fit their contents, with coin and icon controls in a single dock. It uses the Modern interface and works with interfaces that inherit Modern’s window layout.
 
 ## Install
 
@@ -10,12 +10,13 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 
 ## Bags and bank
 
-- Choose **Categories**, **Combined**, or **By bag** independently for inventory and bank. Show the physical bag bar to open or swap bags and scope the current view to a bag.
-- Use **Character** to open the stock equipment, stats, Bandolier, and alternate currency view. Return to Stow from the companion button. Trade, quantity, and item confirmation dialogs use Hailstone’s native interaction.
-- Use the normal item controls to pick up, place, split, inspect, use, and link items through item inspection. The compressed free-slot tile drops the item you are holding into an eligible slot. Expand the tile or use individual empty slots to choose the exact destination.
+- Choose **Category cards**, **Combined**, or **By physical bag** independently for inventory and bank from the dock’s options menu. Click a card heading to collapse it. Drag the dock’s title to move Stow.
+- Hover a dock icon to see what it does. Use the bag icon to show physical bags, and the magnifier to open search. Click coins to use the game’s coin controls.
+- Choose **Character** in the options menu to open the stock equipment, stats, Bandolier, and alternate currency view. Return to Stow from the companion button. Trade, quantity, and item confirmation dialogs use Hailstone’s native interaction.
+- Use the normal item controls to pick up, place, split, inspect, use, and link items through item inspection. The free-slot counter drops the item you are holding into an eligible slot. Right-click the counter to show or hide individual empty slots.
 - Find items by name or group. Combine terms such as `type:tradeskill -is:kept`, `bag:"Large Sack"`, `id:1002`, or `is:new`. Other flags include `is:junk`, `is:quest`, `is:lore`, `is:notrade`, and `is:usable`.
 - Middle-click or Ctrl+Alt+right-click an item to assign every copy to a group, mark it **Keep**, mark it for sale, or lock its current slot for item jobs. Custom groups can represent outfits, collections, or items you want to keep handy. A display group change leaves the item in its current slot.
-- **Stack** fills matching stacks. **Sort** physically orders items through Hailstone’s native item job. Assign a filter to a physical bag and use **Tidy** to move matching items into its compatible free slots. These jobs support carried bags and personal bank bags. Shared bank supports manual moves.
+- The **Restack** icon fills matching stacks. **Sort items** physically orders items through Hailstone’s native item job. Assign a filter to a physical bag and use **Tidy into filtered bags** to move matching items into its compatible free slots. These jobs support carried bags and personal bank bags. Shared bank supports manual moves.
 - Portable tradeskill containers retain their **Combine** actions. Tradeskill storage bags use the game’s tradeskill-item restriction when items are moved or sorted.
 
 ## Settings
@@ -32,7 +33,7 @@ Stow’s core views and item actions require Hailstone 0.7.1-beta or later. Auto
 
 ## Build and test
 
-With a Hailstone client checkout beside this repository, run `python tools/package.py` to regenerate the manifest and platform-independent ZIP. To stage elsewhere, pass `--out dist`. With Lua 5.4, run `lua tests/test_model.lua` from the repository root.
+With a Hailstone client checkout beside this repository, run `python tools/package.py` to regenerate the manifest and platform-independent ZIP. To stage elsewhere, pass `--out dist`. With Lua 5.4, run `lua tests/test_model.lua` and `lua tests/test_cards.lua` from the repository root.
 
 The ImGui host smoke test in `tests/host_smoke.inc` can be included at the end of Hailstone’s `tests/inventory_manager_ui_test.cpp` when building the client’s test suite. It uses a mock server and the real Hailstone UI host.
 

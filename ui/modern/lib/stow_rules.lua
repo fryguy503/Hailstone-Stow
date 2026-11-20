@@ -15,8 +15,8 @@ M.bagFilters = {
 
 M.defaults = {
   enabled = true, replaceInventory = true, replaceBank = true, replaceBags = true,
-  inventoryMode = "grouped", bankMode = "grouped", columns = 10, size = 37,
-  hideEmptyGroups = true, compressEmpty = true, windowLocked = false, showBagBar = true,
+  inventoryMode = "grouped", bankMode = "grouped", columns = 10, size = 31,
+  hideEmptyGroups = true, compressEmpty = true, windowLocked = false, showBagBar = false,
   qualityColors = true, searchDim = true, bankFiltering = true, bankTheme = "default",
   visualSort = "name", bankSort = "name", newItems = true, customFirst = true,
   autoSell = false, tidyAfterLoot = false,
@@ -51,7 +51,7 @@ M.presetKeys = {
 }
 
 M.presets = {
-  {id = "everyday", label = "Everyday", description = "Grouped bags and bank with recent loot at the top."},
+  {id = "everyday", label = "Everyday", description = "Category cards with recent loot at the top."},
   {id = "adventure", label = "Adventurer", description = "Large tiles, visible new items, and a compact bank grid.",
     values = {columns = 8, size = 45, bankMode = "combined", bankTheme = "blue"}},
   {id = "crafting", label = "Tradeskiller", description = "Group inventory and keep the bank organized by physical bag.",

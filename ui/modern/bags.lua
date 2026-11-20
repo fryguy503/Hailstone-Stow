@@ -1,8 +1,25 @@
 local V = dofile("lib/stow_view.lua")
-local T = dofile("lib/theme.lua")
 local slots = dofile("lib/items.lua")
 local API = hs.UI
 local S = V.model
+local INVENTORY = "InventoryWindow"
+local combinedOptions = {
+  coinWindow = INVENTORY,
+  coins = { "IW_Money0", "IW_Money1", "IW_Money2", "IW_Money3" },
+  coinHint = function()
+    local parcels = API.inventory.Parcels() ~= nil and API.windows.TabPage("MerchantWnd", "MW_MerchantSubwindows") == 2
+    return parcels and "Click to send money by parcel (Shift: all)" or "Pick up coin (Shift: all)"
+  end,
+  extraActions = {
+    { label = "Auto-Inventory",
+      available = function() return API.windows.ChildState(INVENTORY, "Hailstone_AutoInventory") == true end,
+      run = function()
+        if API.windows.ChildState(INVENTORY, "Hailstone_AutoInventory") == true then
+          API.windows.ClickChild(INVENTORY, "Hailstone_AutoInventory", "left")
+        end
+      end },
+  },
+}
 
 local bagWindows = {}
 for n = 1, 36 do bagWindows[n] = "Bag" .. n end
@@ -35,9 +52,11 @@ end
 
 local function drawBag(bag)
   if not stillOpen(bag) then return end
-  local width = math.max(260, math.min(5, bag.count) * 49 + 24)
+  local tile = S.get("size")
   local sortable = bag.scope == "inventory" or bag.scope == "bank"
-  local height = 64 + math.ceil(bag.count / 5) * 49 + (bag.combine and 42 or 0) + (sortable and 34 or 0)
+  local width = math.max(sortable and 175 or 140, math.min(5, bag.count) * (tile + 5) + 19)
+  local defaultColumns = math.max(1, (width - 19) // (tile + 5))
+  local height = 46 + math.ceil(bag.count / defaultColumns) * (tile + 5) + (bag.combine and 34 or 0) + (sortable and 34 or 0)
   local kind = V.bagKind(API.inventory.BagSlotItem(bag.window, -1))
   local title = bag.name .. (kind and (" · " .. kind.label) or "")
   V.window(bag.window, title, bag.window, width, height, function(scale)
@@ -82,14 +101,12 @@ ui.window("Bags", function()
       if bag.scope == "inventory" and not bag.combine then carried[#carried + 1] = bag end
     end
   end
-  local inventoryOpen = API.windows.Shown("InventoryWindow")
+  local inventoryOpen = API.windows.Shown(INVENTORY)
   local group = not inventoryOpen and #carried > 1
   if group then
     local first = carried[1]
-    V.window(first.window, "Stow Bags", "allBags", 510, 510, function(scale)
-      V.storage("inventory", scale, 35 * scale)
-      if ui.Button("Close Bags") then closeInventoryBags(opened) end
-    end, function() closeInventoryBags(opened) end)
+    V.compact(first.window, "Stow Bags", "allBags", "inventory", combinedOptions,
+      function() closeInventoryBags(opened) end)
   end
   for _, bag in ipairs(opened) do
     if not group or bag.scope ~= "inventory" or bag.combine then drawBag(bag) end
