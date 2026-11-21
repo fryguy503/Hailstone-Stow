@@ -344,12 +344,15 @@ local function inventorySnapshot()
   end
 
   local rows = Inventory.AllItems() or {}
-  local places, counts = {}, {}
+  local places, counts, petBags = {}, {}, {}
   for _, row in ipairs(rows) do
     row.sub = row.sub or -1
     places[row.place] = row
     if row.where == "carried" or row.where == "worn" then
       counts[row.item.id] = (counts[row.item.id] or 0) + Rules.count(row)
+    end
+    if row.sub < 0 and (row.where == "carried" or row.where == "bank" or row.where == "shared") then
+      petBags[row.place] = Rules.petGear(row.item)
     end
   end
   local held = cursor()
@@ -361,7 +364,7 @@ local function inventorySnapshot()
       generalSlots = generalSlots - row.item.bagSlots + 1
     end
   end
-  snapshot = {rows = rows, places = places, counts = counts, inv = inv, keep = keep, live = live,
+  snapshot = {rows = rows, places = places, counts = counts, petBags = petBags, inv = inv, keep = keep, live = live,
     open = open, big = open and Windows.Shown("BigBankWnd") == true,
     carriedFree = free, carriedCapacity = capacity,
     lastGeneralSlot = math.min(Inventory.LastBagSlot, Inventory.FirstBagSlot + generalSlots - 1)}
@@ -379,6 +382,7 @@ function M.resetNew()
 end
 
 local function classify(cell, categories, p)
+  if cell.petGear then return cell.petGear.id end
   local assigned = p.assignments[cell.item.id]
   if cell.new and p.config.newItems and not p.disabled.new and not p.config.customFirst then return "new" end
   if assigned and validCategory(p, assigned) and not p.disabled[assigned] then return assigned end
@@ -394,11 +398,12 @@ function M.category(cell)
   if p and cell.item then return classify(cell, M.categories(), p) end
 end
 
-local function cellAt(data, where, slot, sub, bag)
+local function cellAt(data, where, slot, sub, bag, petGear)
   local row = data.places[Rules.place(where, slot, sub)]
   local cell = Rules.makeCell(where, slot, sub, row and row.item, bag or row and row.bag,
     where ~= "carried" and (not data.live or not data.open or row and row.stale == true))
   cell.kept = row and row.kept == true
+  cell.petGear = petGear
   if row then
     cell.nameKey = (row.item.name or ""):lower()
     cell.new = where == "carried" and M.get("newItems")
@@ -432,7 +437,8 @@ function M.view(scope, mode, search)
 
   local categories = M.categories()
   local terms = Rules.searchTerms(search)
-  local byCategory, grouped, physical, all = {}, {}, {}, {id = "all", label = "All Items", cells = {}}
+  local byCategory, grouped, physical, petGroups = {}, {}, {}, {}
+  local all = {id = "all", label = "All Items", cells = {}}
   for _, category in ipairs(categories) do
     if category.enabled and (category.id ~= "new" or p.config.newItems and scope == "inventory") then
       local group = {id = category.id, label = category.label, cells = {}}
@@ -472,8 +478,14 @@ function M.view(scope, mode, search)
       local label = top.item.name or "Bag"
       local group = {id = top.place, label = label, cells = {}, bag = top}
       physical[#physical + 1] = group
+      local petGear = data.petBags[top.place]
+      if petGear and not byCategory[petGear.id] then
+        local petGroup = {id = petGear.id, label = petGear.label, cells = {}}
+        byCategory[petGear.id] = petGroup
+        petGroups[#petGroups + 1] = petGroup
+      end
       for sub = 0, count - 1 do
-        local cell = cellAt(data, where, slot, sub, label)
+        local cell = cellAt(data, where, slot, sub, label, petGear)
         if live or cell.item then add(cell, group) end
       end
     elseif live or top.item then
@@ -481,6 +493,8 @@ function M.view(scope, mode, search)
     end
   end
   if scope == "inventory" then result.free, result.capacity = data.carriedFree, data.carriedCapacity end
+  table.sort(petGroups, function(a, b) return a.label < b.label end)
+  for i = #petGroups, 1, -1 do table.insert(grouped, 1, petGroups[i]) end
   if #empty.cells > 0 then grouped[#grouped + 1] = empty end
 
   local layout = mode == "combined" and {all} or mode == "bags" and physical or grouped
@@ -559,18 +573,28 @@ function M.run(scope, mode, bagWindow)
   if not p or not M.actions() then M.info("Item actions are unavailable."); return false end
   if scope == "shared" then M.info("Move shared bank items through their slots."); return false end
   local data = inventorySnapshot()
-  local locked = {}
-  for place in pairs(p.locks) do
-    locked[#locked + 1] = place
-    local row = data and data.places[place]
+  local lockedPlaces = {}
+  local function lock(place)
+    lockedPlaces[place] = true
+    local row = data.places[place]
     if row and row.sub < 0 and (row.item.bagSlots or 0) > 0 then
       for sub = 0, row.item.bagSlots - 1 do
-        locked[#locked + 1] = Rules.place(row.where, row.slot, sub)
+        lockedPlaces[Rules.place(row.where, row.slot, sub)] = true
       end
     end
   end
+  for place in pairs(p.locks) do lock(place) end
+  for place in pairs(data.petBags) do lock(place) end
+  local locked = {}
+  for place in pairs(lockedPlaces) do locked[#locked + 1] = place end
   local err = Inventory.SortItems(bagWindow or scope, mode, {filters = p.filters, locked = locked})
-  M.info(err or (Inventory.ItemJob() and "Working on items." or "Everything is already organized."))
+  if err then
+    M.info(err)
+  elseif scope == "bank" and mode == "stack" and not bagWindow then
+    M.info(Inventory.ItemJob() and "Restacking the personal bank." or "No matching stacks to combine in the personal bank.")
+  else
+    M.info(Inventory.ItemJob() and "Working on items." or "Everything is already organized.")
+  end
   return not err
 end
 

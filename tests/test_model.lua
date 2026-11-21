@@ -363,9 +363,81 @@ local function testOrganizeAction()
   eq(S.view("inventory", "grouped", "is:new").matched, 1, "organize still detects subsequent loot")
 end
 
+local function testSyncrosatchels()
+  local S, host = fixture()
+  local function jobLocks()
+    local lockSet = {}
+    for _, place in ipairs(host.calls[#host.calls][4].locked) do lockSet[place] = true end
+    return lockSet
+  end
+  local alternateName = "MAGICIAN’S SYNCHROSATCHEL"
+  local petBag = row("i:23", "carried", 23, -1, item(901, "Necromancer's Syncrosatchel", "", {bagSlots = 4}))
+  local petSword = row("i:23:0", "carried", 23, 0, item(100, "Bronze Sword", "weapons"))
+  host.rows = {
+    petBag, petSword,
+    row("i:24", "carried", 24, -1, item(100, "Bronze Sword", "weapons")),
+    row("b:0", "bank", 0, -1, item(902, alternateName, "", {bagSlots = 2})),
+    row("b:0:0", "bank", 0, 0, item(501, "Pet Helm", "armor")),
+    row("b:1", "bank", 1, -1, item(903, "Necromancer's Syncrosatchel Pattern", "", {bagSlots = 2})),
+    row("b:1:0", "bank", 1, 0, item(502, "Ordinary Helm", "armor")),
+    row("b:2", "bank", 2, -1, item(904, alternateName, "armor")),
+  }
+  S.resetNew()
+  local custom = assert(S.addCategory("Spare Weapons"))
+  S.assign(100, custom)
+  local view = S.view("inventory", "grouped")
+  local sword, section = cell(view, "i:23:0")
+  eq(group(view, section).label, "Necromancer Pet Gear", "carried gear is classified by the parent satchel")
+  local _, outsideSection = cell(view, "i:24")
+  eq(outsideSection, custom, "an identical copy outside the satchel keeps its manual category")
+  eq(S.view("inventory", "combined", 'group:"Necromancer Pet Gear"').matched, 1, "pet gear group search")
+
+  local bank = S.view("bank", "grouped")
+  local _, bankSection = cell(bank, "b:0:0")
+  eq(group(bank, bankSection).label, "Magician Pet Gear", "banked satchel accepts alternate case, apostrophe, and spelling")
+  local _, ordinarySection = cell(bank, "b:1:0")
+  eq(ordinarySection, "armor", "lookalike bag name does not classify its contents as pet gear")
+
+  for _, mode in ipairs({"sort", "tidy", "stack"}) do
+    eq(S.run("inventory", mode), true, mode .. " starts a native inventory job")
+    local lockSet = jobLocks()
+    for sub = 0, 3 do eq(lockSet["i:23:" .. sub], true, mode .. " reserves filled and empty pet bag slots") end
+    eq(lockSet["i:24"], nil, mode .. " still includes the ordinary copy")
+  end
+  eq(S.run("bank", "stack"), true, "personal bank runs the native restack")
+  local lockSet = jobLocks()
+  eq(lockSet["b:0:0"], true, "bank restack reserves occupied pet gear slots")
+  eq(lockSet["b:0:1"], true, "bank restack reserves empty pet gear slots")
+  eq(lockSet["b:1:0"], nil, "bank restack includes contents of ordinary bags")
+  eq(lockSet["b:2"], nil, "a pet bag name alone does not lock a non-container")
+  eq(S.status(), "No matching stacks to combine in the personal bank.", "bank restack no-op describes its scope")
+
+  eq(S.click(sword, "left"), true, "pet gear can still be moved manually")
+  local click = host.calls[#host.calls]
+  eq(click[2], 23, "manual click keeps the real satchel position")
+  eq(click[3], 0, "manual click keeps the real satchel offset")
+  local empty = cell(S.view("inventory", "bags"), "i:23:1")
+  host.cursor = item(700, "Upgrade", "weapons")
+  host:advance(0.01)
+  eq(S.canPlace(empty), true, "native fit checks still allow a manual drop into the satchel")
+  host.cursor = nil
+  host:advance(0.01)
+
+  petBag.place, petBag.slot = "i:25", 25
+  petSword.place, petSword.slot, petSword.sub = "i:23", 23, -1
+  host.revision = host.revision + 1
+  local _, movedSection = cell(S.view("inventory", "grouped"), "i:23")
+  eq(movedSection, custom, "gear removed from a satchel returns to its previous category")
+  eq(S.run("inventory", "sort"), true, "sort can run after the satchel moves")
+  lockSet = jobLocks()
+  eq(lockSet["i:23:0"], nil, "moving the satchel releases its previous slots")
+  eq(lockSet["i:25:0"], true, "empty satchel protection follows the bag to its new location")
+end
+
 testGroupingAndSnapshots()
 testLayoutsAndSearch()
 testProfilesAndPresets()
 testActionGuardsAndJunk()
 testOrganizeAction()
+testSyncrosatchels()
 print("Stow model tests passed")

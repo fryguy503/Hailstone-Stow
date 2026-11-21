@@ -1,7 +1,7 @@
 -- Run from the add-on checkout with Lua 5.4.
 local load = dofile
 local positions, labels, clicks = {}, {}, {}
-local x, y, last, hit, hover, right, held, tooltip
+local x, y, last, hit, hover, right, held, tooltip, jobScope, jobMode
 local timeToExpand = true
 local consumedRight = 0
 
@@ -10,6 +10,7 @@ local model = {
   get = function(key) return key == "compressEmpty" and timeToExpand or false end,
   canPlace = function(cell) return cell.fits end,
   click = function(cell) clicks[#clicks + 1] = cell.place end,
+  run = function(scope, mode) jobScope, jobMode = scope, mode end,
 }
 local function nop() end
 local replacements = {
@@ -94,6 +95,16 @@ assert(labels["##stowCoin.shared"] == "Shared 34")
 assert(labels["##stowDock.empty.bank"] == "Personal 3")
 assert(labels["##stowDock.empty.shared"] == "Shared 2")
 for width = 54, measured.width - 1 do draw(width) end
+
+hit, hover = "##stowDock.stack", "##stowDock.stack"
+draw(measured.width)
+assert(tooltip == "Restack matching items in the personal bank")
+assert(jobScope == "bank" and jobMode == "stack")
+
+local inventory = dock.measure("InventoryWnd", "inventory", {}, {title = "Stow Bags", expandedFree = {}}, 1, {})
+dock.draw(inventory, inventory.width)
+assert(tooltip == "Restack matching items")
+assert(jobScope == "inventory" and jobMode == "stack")
 
 -- Identical controls in the footer and optional cards operate on the scope supplied by the view.
 local personalFooter, sharedFooter, sharedTile = "##stowDock.empty.bank", "##stowDock.empty.shared", "##stowSlot.empty.shared"

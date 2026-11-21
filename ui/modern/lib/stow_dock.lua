@@ -285,8 +285,11 @@ local function drawControl(dock, token, x, y, w)
         or "Sort inventory and clear New Items"
       if click then S.organize() end
     elseif id == "stack" then
-      tip = dock.job and (string.format("Stop %s (%d / %d)", dock.job.kind or "item job", dock.job.done, dock.job.total))
-        or "Restack matching items"
+      if dock.job then
+        tip = string.format("Stop %s (%d / %d)", dock.job.kind or "item job", dock.job.done, dock.job.total)
+      else
+        tip = dock.scope == "bank" and "Restack matching items in the personal bank" or "Restack matching items"
+      end
       if click then
         if dock.job then API.inventory.StopItemJob() else S.run(dock.scope, "stack") end
       end

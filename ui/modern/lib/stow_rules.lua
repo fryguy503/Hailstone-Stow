@@ -7,6 +7,23 @@ M.categories = {
   {"other", "Other"},
 }
 
+local petGearByClass = {}
+for _, name in ipairs({
+  "Bard", "Beastlord", "Berserker", "Cleric", "Druid", "Enchanter", "Magician", "Monk",
+  "Necromancer", "Paladin", "Ranger", "Rogue", "Shadow Knight", "Shaman", "Warrior", "Wizard",
+}) do
+  local key = name:lower()
+  petGearByClass[key] = {id = "pet-" .. key:gsub(" ", "-"), label = name .. " Pet Gear"}
+end
+petGearByClass.shadowknight = petGearByClass["shadow knight"]
+
+function M.petGear(item)
+  if (item.bagSlots or 0) <= 0 then return nil end
+  local name = (item.name or ""):lower():gsub("’", "'")
+  local class = name:match("^([%a ]+)'s synch?rosatchel$")
+  return class and petGearByClass[class]
+end
+
 M.bagFilters = {
   {id = "food", label = "Food & Drink"}, {id = "potions", label = "Potions"},
   {id = "tradeskill", label = "Tradeskill Materials"}, {id = "spells", label = "Spells & Tomes"},
