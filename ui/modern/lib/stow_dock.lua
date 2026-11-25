@@ -60,7 +60,7 @@ function D.measure(screen, scope, opts, state, scale, targets)
   local done, total, job = API.inventory.ItemJob()
   dock.job = done and total and {done = done, total = total, kind = job} or nil
   add({id = "search", width = h}, true)
-  if API.inventory.AltFinder then add({id = "altFinder", width = h}, true) end
+  add({id = "altFinder", width = h}, true)
   if scope == "inventory" then add({id = "organize", width = h}, true) end
   for _, id in ipairs({"stack", "bags", "options"}) do
     add({id = id, width = h}, true)
@@ -284,7 +284,7 @@ local function drawControl(dock, token, x, y, w)
         if not state.searchOpen then state.query = "" end
       end
     elseif id == "altFinder" then
-      tip = "Alt Finder · Search your characters’ bags and personal banks"
+      tip = "Alt Finder · Search bags and personal banks"
       if click then dofile("lib/stow_alt_finder.lua").open(state.query ~= "" and state.query or nil) end
     elseif id == "organize" then
       tip = busy and "Finish the current item job to sort inventory and clear New Items"

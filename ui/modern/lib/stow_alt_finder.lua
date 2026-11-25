@@ -2,6 +2,7 @@ local existing = rawget(_G, "HailstoneStowAltFinder")
 if existing then return existing end
 
 local API = hs.UI
+local Rules = dofile("lib/stow_rules.lua")
 local T = dofile("lib/theme.lua")
 local Style = dofile("lib/style.lua")
 local Icons = dofile("lib/menuicons.lua")
@@ -72,6 +73,35 @@ end
 
 local function searchTerm(query)
   return (query or ""):match("^%s*(.-)%s*$"):lower()
+end
+
+local function inventoryView(query)
+  local inventory = API.inventory
+  local search = inventory.AltFinder
+  if type(search) == "function" then
+    local view = search(query)
+    if type(view) == "table" then return view end
+  end
+
+  local name = API.character.Name()
+  if not name or name == "" then return nil end
+  local rows = inventory.AllItems()
+  if not rows then return nil end
+  local bankLive, bankAge = inventory.BankSeen()
+  local character = { name = name, session = "local", bankSeen = bankLive == true or bankAge ~= nil }
+  local items = {}
+  for _, row in ipairs(rows) do
+    if row.where == "carried" or row.where == "bank" then
+      local bank = row.where == "bank"
+      if bank then character.bankSeen = true end
+      items[#items + 1] = {
+        name = row.item.name, icon = row.item.icon, count = Rules.count(row),
+        character = name, where = row.where, slot = row.slot, sub = row.sub, bag = row.bag,
+        live = not row.stale and (not bank or bankLive == true), age = bank and bankAge or nil,
+      }
+    end
+  end
+  return { localOnly = true, characters = { character }, items = items }
 end
 
 local function resultRows(view, state)
@@ -187,7 +217,7 @@ local function toolbar(view, state, x, y, w, s, sidebar)
   state.area = combobox("##alt-finder-place", state.area or "all", AREAS, areaW)
   if split then h = h + 37 * s end
 
-  if not sidebar then
+  if not sidebar and not (view and view.localOnly) then
     local options = { { false, "All characters" } }
     for _, character in ipairs(view and view.characters or {}) do
       options[#options + 1] = { character.name, character.name .. " · " .. SESSION_LABEL[character.session] }
@@ -331,10 +361,9 @@ end
 local function results(view, result, state, x, y, w, h, s)
   local top = summary(result, x, y, w, s)
   if not view or #result.items == 0 then
-    local character = result.sessions[state.character]
+    local character = result.sessions[state.character] or (view and view.localOnly and view.characters[1])
     local empty = "No items match this search."
-    if not Finder.available() and not view then empty = "Alt Finder needs a newer Hailstone client."
-    elseif not view then empty = "Waiting for your character’s inventory…"
+    if not view then empty = "Waiting for your character’s inventory…"
     elseif state.area == "bank" and character and not character.bankSeen then
       empty = "No personal bank snapshot for " .. character.name .. "."
     end
@@ -370,10 +399,6 @@ local function results(view, result, state, x, y, w, h, s)
     ui.Dummy(contentW, #result.items * rowH)
   end
   ui.EndChild()
-end
-
-function Finder.available()
-  return type(API.inventory.AltFinder) == "function"
 end
 
 local function windowBounds(state, io, s)
@@ -439,7 +464,7 @@ function Finder.draw(view, state)
     local x, wy = ui.GetWindowPos()
     local w, h = ui.GetWindowSize()
     rememberBounds(state, x, wy, w, h, s, expectedX, expectedY, expectedW, expectedH)
-    local sidebar = w >= 617 * s
+    local sidebar = w >= 617 * s and not (view and view.localOnly)
     local sideW = sidebar and 154 * s or 0
     local y = wy + header(view, state, x, wy, w, s, io.width, io.height)
     y = y + toolbar(view, state, x, y, w, s, sidebar)
@@ -462,6 +487,10 @@ function Finder.draw(view, state)
     Icons.Draw("Help", x + 17 * s, fy + 16 * s, 12 * s, C.accent)
     local footer = w < 545 * s and "Last-seen quantities may have changed."
       or "Last-seen quantities may have changed. Bank snapshots refresh when the client receives bank data."
+    if view and view.localOnly then
+      footer = w < 545 * s and "Current character only."
+        or "Current character only. Last-seen bank quantities may have changed."
+    end
     fit(x + 29 * s, fy + 9 * s, footer, w - 58 * s, C.muted, FONT_CAPTION)
   end
   ui.End()
@@ -487,9 +516,8 @@ function Finder.frame()
   if not window.open then return end
   local now = ui.GetTime()
   local query = searchTerm(window.query)
-  if Finder.available() and (window.pollAt == nil or now < window.pollAt or now - window.pollAt >= 0.25
-      or window.pollQuery ~= query) then
-    window.view = API.inventory.AltFinder(query)
+  if window.pollAt == nil or now < window.pollAt or now - window.pollAt >= 0.25 or window.pollQuery ~= query then
+    window.view = inventoryView(query)
     window.pollAt, window.pollQuery = now, query
   end
   Finder.draw(window.view, window)

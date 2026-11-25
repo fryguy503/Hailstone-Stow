@@ -86,7 +86,7 @@ local function draw(width)
 end
 
 draw(measured.width)
-assert(positions["##stowDock.altFinder"] == nil, "older clients do not have an Alt Finder dock button")
+assert(positions["##stowDock.altFinder"], "Alt Finder is available without the native index")
 assert(labels["##stowCoin.shared"] == "S 34")
 assert(labels["##stowDock.empty.bank"] == "P 3")
 assert(labels["##stowDock.empty.shared"] == "S 2")
@@ -135,7 +135,6 @@ draw(measured.width)
 assert(not state.expandedFree.shared)
 assert(#clicks == 2)
 
-hs.UI.inventory.AltFinder = nop
 state.query = "Spider Silk"
 hit, hover = "##stowDock.altFinder", "##stowDock.altFinder"
 measured = dock.measure("BankWnd", "bank", {}, state, 1, {personal, shared})

@@ -1,6 +1,6 @@
 # Hailstone Stow
 
-Stow adds compact bag and bank views to Hailstone. Category cards wrap and resize to fit their contents, with coin and icon controls in a single dock. Alt Finder searches across characters on the same server when the client provides its inventory API. Stow uses the Modern interface and works with interfaces that inherit Modern’s window layout.
+Stow adds compact bag and bank views to Hailstone. Category cards wrap and resize to fit their contents, with coin and icon controls in a single dock. Alt Finder searches bags and personal banks. Stow uses the Modern interface and works with interfaces that inherit Modern’s window layout.
 
 ## Install
 
@@ -25,9 +25,9 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 
 Open **Alt Finder** from either Stow dock, the plugin menu, or `/altfinder` while in game. Search by item name and filter by character, bags, or personal bank. Every match shows the character, quantity, and physical slot. The item totals show live and last-seen quantities separately.
 
-Stow records your carried bags and personal bank on the current server as you play. Sign in to each character with Stow active to start recording its bags. Visit a banker to record bank slots when the server sends bank data. A signed-in character’s bags can be live while its bank still shows an older snapshot.
+With the native Alt Finder inventory API, Stow records bags and personal banks on the current server as you play. Sign in to each character with Stow active to start recording its bags. Visit a banker to record bank slots when the server sends bank data. A signed-in character’s bags can be live while its bank still shows an older snapshot.
 
-Other Hailstone windows using the same local player-data folder contribute live results while Stow is active there. Characters from a different server or player-data folder have their own index. Alt Finder needs a Hailstone build with the Alt Finder inventory API.
+Other Hailstone windows using the same local player-data folder contribute live results while Stow is active there. Characters from a different server or player-data folder have their own index. Earlier client builds search the signed-in character’s carried bags and personal bank.
 
 ## Settings
 
@@ -47,7 +47,7 @@ Stow’s core views and item actions require Hailstone 0.7.1-beta or later. Auto
 
 ## Build and test
 
-With a Hailstone client checkout beside this repository, run `python tools/package.py` to regenerate the manifest and platform-independent ZIP. To stage elsewhere, pass `--out dist`. With Lua 5.4, run `lua tests/test_model.lua`, `lua tests/test_cards.lua`, and `lua tests/test_dock.lua` from the repository root.
+With a Hailstone client checkout beside this repository, run `python tools/package.py` to regenerate the manifest and platform-independent ZIP. To stage elsewhere, pass `--out dist`. With Lua 5.4, run `lua tests/test_model.lua`, `lua tests/test_cards.lua`, `lua tests/test_dock.lua`, and `lua tests/test_alt_finder.lua` from the repository root.
 
 The ImGui host smoke test in `tests/host_smoke.inc` can be included at the end of Hailstone’s `tests/inventory_manager_ui_test.cpp` when building the client’s test suite. It uses a mock server and the real Hailstone UI host.
 
