@@ -1,10 +1,10 @@
 hailstone-addon 1
 name stow
 kind script
-version 0.4.0
+version 0.5.0
 autoload 1
 min_client 0.7.1-beta
 author Fryguy
-description Compact category cards for Hailstone bags and bank.
+description Compact Hailstone bags and bank. Alt Finder requires a client with the Alt Finder inventory API.
 caps read,ui,actions,commands
-package any 31578 e76e23927b890cd001dd57b41941700438b3c7d83856afc942773b916ac77d44 stow-0.4.0.zip
+package any 38891 2cbb3c9e0b971e7df8bc513c8b60aa040f63418ab2d685e8d82b93d211099321 stow-0.5.0.zip

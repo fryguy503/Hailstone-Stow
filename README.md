@@ -1,6 +1,6 @@
 # Hailstone Stow
 
-Stow adds compact bag and bank views to Hailstone. Category cards wrap and resize to fit their contents, with coin and icon controls in a single dock. It uses the Modern interface and works with interfaces that inherit Modern’s window layout.
+Stow adds compact bag and bank views to Hailstone. Category cards wrap and resize to fit their contents, with coin and icon controls in a single dock. Alt Finder searches across characters on the same server when the client provides its inventory API. Stow uses the Modern interface and works with interfaces that inherit Modern’s window layout.
 
 ## Install
 
@@ -11,7 +11,7 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 ## Bags and bank
 
 - Choose **Category cards**, **Combined**, or **By physical bag** independently for Open All Bags and bank from the dock’s options menu. Click a card heading to collapse it. Drag the dock’s title to move Stow. Cards expand away from the dock and scroll when they reach the screen edge.
-- Hover a dock icon to see what it does. Use the bag icon to show physical bags, and the magnifier to open search. Click coins to use the game’s coin controls.
+- Hover a dock icon to see what it does. Use the bag icon to show physical bags, the magnifier to search the current view, and the bag with a magnifier to open Alt Finder. Click coins to use the game’s coin controls.
 - **Shift+B** opens carried bags together, including tradeskill containers. Open a tradeskill container directly to use its Combine window.
 - Use the regular Inventory window for equipment, stats, Bandolier, and alternate currency. Trade, quantity, and item confirmation dialogs use Hailstone’s native interaction.
 - Use the normal item controls to pick up, place, split, inspect, use, and link items through item inspection. Click a free-slot counter while holding an item to place it in an eligible slot. Stow Bank gives **Personal** and **Shared** their own counters and drop targets. Right-click a counter to show or hide the individual empty slots for that area.
@@ -20,6 +20,14 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 - The **Restack** icon fills matching stacks in carried bags or the personal bank, depending on which dock you use. **Sort items** physically orders items through Hailstone’s native item job. Assign a filter to a physical bag and use **Tidy into filtered bags** to move matching items into its compatible free slots. Shared bank items can be moved manually.
 - In **Category cards**, a class-named Syncrosatchel automatically groups its contents in a **Pet Gear** card for that class, such as **Necromancer Pet Gear**. Only the copy inside the satchel joins that card. Stow’s Sort, Tidy, and Restack skip the satchel and all its slots, including empty ones. Use the normal item controls to swap pet gear.
 - Portable tradeskill containers retain their **Combine** actions. Tradeskill storage bags use the game’s tradeskill-item restriction when items are moved or sorted.
+
+## Alt Finder
+
+Open **Alt Finder** from either Stow dock, the plugin menu, or `/altfinder` while in game. Search by item name and filter by character, bags, or personal bank. Every match shows the character, quantity, and physical slot. The item totals show live and last-seen quantities separately.
+
+Stow records your carried bags and personal bank on the current server as you play. Sign in to each character with Stow active to start recording its bags. Visit a banker to record bank slots when the server sends bank data. A signed-in character’s bags can be live while its bank still shows an older snapshot.
+
+Other Hailstone windows using the same local player-data folder contribute live results while Stow is active there. Characters from a different server or player-data folder have their own index. Alt Finder needs a Hailstone build with the Alt Finder inventory API.
 
 ## Settings
 
