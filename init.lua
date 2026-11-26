@@ -22,11 +22,6 @@ hs.ui_function("take_alt_finder_request", function()
   return query
 end)
 
-hs.ui_function("close_inventory_bags", function()
-  mq.cmd("/keypress CLOSE_INV_BAGS")
-  return true
-end)
-
 -- Some servers allow drawing but deny commands. The Stow window still runs there.
 if pcall(mq.bind, "/stow", function() settingsRequested = true end) then
   hs.menu("Stow Settings", "/stow")

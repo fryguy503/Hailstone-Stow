@@ -12,7 +12,7 @@ Stow needs the server to allow its Lua add-on and grant UI, read, actions, and c
 
 - Choose **Category cards**, **Combined**, or **By physical bag** independently for Open All Bags and bank from the dock’s options menu. Click a card heading to collapse it. Drag the dock’s title to move Stow. Cards expand away from the dock and scroll when they reach the screen edge.
 - Hover a dock icon to see what it does. Use the bag icon to show physical bags, the magnifier to search the current view, and the bag with a magnifier to open Alt Finder. Click coins to use the game’s coin controls.
-- **Shift+B** opens carried bags together, including tradeskill containers. Open a tradeskill container directly to use its Combine window.
+- **Shift+B** opens carried bags together, including tradeskill containers. **Escape** or the Stow Bags close button closes them. After closing them this way, **Shift+B** can take two presses to reopen them. Open a tradeskill container directly to use its Combine window.
 - Use the regular Inventory window for equipment, stats, Bandolier, and alternate currency. Trade, quantity, and item confirmation dialogs use Hailstone’s native interaction.
 - Use the normal item controls to pick up, place, split, inspect, use, and link items through item inspection. Click a free-slot counter while holding an item to place it in an eligible slot. Stow Bank gives **Personal** and **Shared** their own counters and drop targets. Right-click a counter to show or hide the individual empty slots for that area.
 - Find items by name or group. Combine terms such as `type:tradeskill -is:kept`, `bag:"Large Sack"`, `id:1002`, or `is:new`. Other flags include `is:junk`, `is:quest`, `is:lore`, `is:notrade`, and `is:usable`.

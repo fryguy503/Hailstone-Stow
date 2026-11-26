@@ -1,10 +1,10 @@
 hailstone-addon 1
 name stow
 kind script
-version 0.5.1
+version 0.5.2
 autoload 1
 min_client 0.7.1-beta
 author Fryguy
 description Compact Hailstone bags, bank, and Alt Finder.
 caps read,ui,actions,commands
-package any 39184 83ffe5beacc6d4564d9b4126d4269ec256f8e13e78afbf76b0c9b62bcf1dd6ec stow-0.5.1.zip
+package any 39203 538bf7babbc36fc1919ace27f11ec1efc61fa7798147970f12c95043d006e783 stow-0.5.2.zip

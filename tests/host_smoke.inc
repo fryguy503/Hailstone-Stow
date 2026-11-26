@@ -1,8 +1,11 @@
 // Include from Hailstone's tests/inventory_manager_ui_test.cpp to run with the real UI, mock server and ImGui.
+#include <span>
+
 #include "plugin/policy.h"
 #include "plugin/ui_bridge.h"
 #include "core/ascii_case.h"
 #include "net/door_packets.h"
+#include "net/server_files_packets.h"
 #include "net/trade_packets.h"
 
 TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bags and Bank") {
@@ -55,9 +58,27 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
     }
 
     ScratchDir scratch("stow_host_smoke");
-    Rig rig(std::move(config), quick_options());
+    auto options = quick_options();
+    options.server_access_dir = scratch.path() / "server-files";
+    Rig rig(std::move(config), options);
+    constexpr std::string_view policy = "[commands]\nblock = /keypress\n";
+    const auto bytes = std::as_bytes(std::span(policy));
+    const net::ServerFilesPage page{1, 1, 0, {{static_cast<std::uint32_t>(bytes.size()), sha256(policy), "hailstone.cfg"}}};
+    const net::ServerFilesChunk chunk{1, 0, 0, {bytes.begin(), bytes.end()}};
+    rig.on_step = [&, next = std::size_t{0}, sent_list = false]() mutable {
+        const auto& log = rig.server.zone_log;
+        while (next < log.size()) {
+            if (log[next++].opcode != net::kOpHsFilesRequest) continue;
+            rig.server.zone.send_reliable(sent_list ? net::encode(chunk) : net::encode(page));
+            sent_list = true;
+        }
+    };
     REQUIRE(rig.to_zone());
     auto& conn = rig.conn;
+    const std::string denial(plugin::kDefaultCommandBlockedMessage);
+    REQUIRE_FALSE(conn.server_command_allowed("/keypress"));
+    conn.send_command("/keypress CLOSE_INV_BAGS");
+    REQUIRE(has_line(rig.chat(), denial));
     put_coin_away(conn);
     auto character = conn.character_name();
     for (char& c : character) c = ascii_lower(c);
@@ -70,9 +91,7 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
         << "plugin.script:stow.stow.compact.anchor.bank=520,510\n";
     auto* ctx = ImGui::CreateContext();
     ImGui::GetIO().IniFilename = nullptr;
-    unsigned char* pixels = nullptr;
-    int width = 0, height = 0;
-    ImGui::GetIO().Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);
+    ImGui::GetIO().BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
     {
         plugin::UiBridge bridge;
         bool settings_requested = false;
@@ -81,6 +100,11 @@ TEST_CASE("Stow add-on: real host keeps native Inventory independent of Stow Bag
         }, plugin::UiBridge::Kind::Script);
         bridge.add_function("stow", "take_settings_request", [&](const auto&) {
             return plugin::UiValue::boolean(std::exchange(settings_requested, false));
+        }, plugin::UiBridge::Kind::Script);
+        // The old script can still be loaded when the window code reloads.
+        bridge.add_function("stow", "close_inventory_bags", [&](const auto&) {
+            conn.send_command("/keypress CLOSE_INV_BAGS");
+            return plugin::UiValue::boolean(true);
         }, plugin::UiBridge::Kind::Script);
         app::UiHost host;
         host.in_game = host.ui_ready = true;
@@ -289,9 +313,23 @@ return tostring(name == "Crafting Toolbox" and combine and scope == "inventory")
         frames();
         CHECK_FALSE(stock_inventory->Active);
         CHECK(aggregated_bags->Active);
-        api.toggle_all_bags();
+
+        (void)rig.chat();
+        host.close_top_window = true; // The native Escape binding sets this for the UI pack.
         frames();
         CHECK_FALSE(aggregated_bags->Active);
+        CHECK(run("return tostring(hs.UI.windows.Shown('Bag1'))") == "false");
+        CHECK_FALSE(has_line(rig.chat(), denial));
+
+        api.open_all_bags();
+        frames();
+        REQUIRE(aggregated_bags->Active);
+        REQUIRE(click_item(*aggregated_bags, "##stowDock.close", 7.f, 36.f, true));
+        frames();
+        CHECK_FALSE(aggregated_bags->Active);
+        CHECK(run("return tostring(hs.UI.windows.Shown('Bag1'))") == "false");
+        CHECK_FALSE(has_line(rig.chat(), denial));
+        api.close_all_bags(); // Reset the native toggle for the rest of this test.
 
         api.right_click_item(at(24));
         frames();

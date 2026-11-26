@@ -42,12 +42,11 @@ local function closeBag(bag)
   if stillOpen(bag) then API.windows.ClickChild(bag.window, "StandardDoneButton", "left") end
 end
 
-local function closeInventoryBags(opened)
-  local owner = API.plugins.Get("stow")
-  if owner and owner.close_inventory_bags and owner.close_inventory_bags() == true then return end
-  for n = #opened, 1, -1 do
-    local bag = opened[n]
-    if bag.scope == "inventory" then closeBag(bag) end
+local function closeInventoryBags(carried)
+  -- Closing a bag shifts the BagN identifiers of the ones after it.
+  for n = #carried, 1, -1 do
+    local bag = carried[n]
+    if bag.slot >= API.inventory.FirstBagSlot and bag.slot <= API.inventory.LastBagSlot then closeBag(bag) end
   end
 end
 
@@ -129,7 +128,7 @@ ui.window("Bags", function()
   end
   if first then
     V.compact(first.window, "Stow Bags", "allBags", "inventory", combinedOptions,
-      function() closeInventoryBags(opened) end)
+      function() closeInventoryBags(carried) end)
   end
   for _, bag in ipairs(opened) do
     if not grouped[bag.window] then drawBag(bag) end
