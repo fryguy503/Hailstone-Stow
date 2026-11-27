@@ -3,6 +3,7 @@ local load = dofile
 local positions, labels, clicks = {}, {}, {}
 local x, y, last, hit, hover, right, held, tooltip, jobScope, jobMode
 local finderQuery
+local stackTargets, stackRemainder, stackPin, merges
 local timeToExpand = true
 local consumedRight = 0
 
@@ -11,6 +12,12 @@ local model = {
   get = function(key) return key == "compressEmpty" and timeToExpand or false end,
   canPlace = function(cell) return cell.fits end,
   click = function(cell) clicks[#clicks + 1] = cell.place end,
+  stackTargets = function(_, pin) stackPin = pin; return stackTargets end,
+  mergeHeld = function(stacks)
+    assert(stacks == stackTargets)
+    merges = merges + 1
+    return stackRemainder
+  end,
   run = function(scope, mode) jobScope, jobMode = scope, mode end,
 }
 local function nop() end
@@ -134,6 +141,22 @@ timeToExpand = false
 draw(measured.width)
 assert(not state.expandedFree.shared)
 assert(#clicks == 2)
+
+local carried = {scope = "inventory", free = 0, capacity = 8, cells = {}, pin = "i:24"}
+hit, hover, held = "##stowDock.empty.inventory", "##stowDock.empty.inventory", {name = "Held stack"}
+stackTargets, merges = {{place = "i:24:1"}}, 0
+dock.drawTarget(inventory, carried, 0, 0, 30, 30, false)
+assert(merges == 1 and #clicks == 2 and stackPin == "i:24")
+assert(tooltip:match("fill matching stacks"))
+
+hit, hover = "##stowSlot.empty.inventory", "##stowSlot.empty.inventory"
+carried.free, carried.cells = 1, {{place = "i:24:2", fits = true}}
+dock.drawTarget(inventory, carried, 0, 0, 30, 30, true)
+assert(merges == 2 and #clicks == 2, "a completed merge leaves the free slot empty")
+stackRemainder = held
+dock.drawTarget(inventory, carried, 0, 0, 30, 30, true)
+assert(merges == 3 and clicks[3] == "i:24:2", "overflow uses the eligible empty slot")
+held = nil
 
 state.query = "Spider Silk"
 hit, hover = "##stowDock.altFinder", "##stowDock.altFinder"

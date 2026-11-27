@@ -205,8 +205,9 @@ function D.drawTarget(dock, target, x, y, w, h, asTile)
   local expands = S.get("compressEmpty") and #cells > 0
   local destination, compatible, unknown
   if held then destination, compatible, unknown = availableSlots(cells, hover) end
+  local stacks = held and scope == "inventory" and S.stackTargets(held, target.pin)
   local scopeColor = scope == "shared" and C.platinum or C.accent
-  local color = held and (destination and C.good or C.danger) or scopeColor
+  local color = held and ((stacks or destination) and C.good or C.danger) or scopeColor
   if asTile or hover or (expands and state.expandedFree[scope]) then
     local alpha = (hover or state.expandedFree[scope]) and 0.16 or 0.09
     ui.DrawRectFilled(x, y, x + w, y + h, color[1], color[2], color[3], alpha, 3 * s)
@@ -236,7 +237,11 @@ function D.drawTarget(dock, target, x, y, w, h, asTile)
           message = message .. "\n" .. compatible .. " compatible slots"
         end
       end
-      if destination then message = message .. "\nClick to place the held item" end
+      if stacks then
+        message = message .. "\nClick to fill matching stacks"
+      elseif destination then
+        message = message .. "\nClick to place the held item"
+      end
     end
     if expands then message = message .. "\nRight-click to show or hide individual slots" end
     ui.SetTooltip(message)
@@ -248,7 +253,8 @@ function D.drawTarget(dock, target, x, y, w, h, asTile)
   end
   if hit then
     if held then
-      if destination then S.click(destination, "left") end
+      if stacks then held = S.mergeHeld(stacks, held) end
+      if held and destination and S.canPlace(destination) ~= false then S.click(destination, "left") end
     elseif expands then
       state.expandedFree[scope] = not state.expandedFree[scope]
     end

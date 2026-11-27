@@ -532,6 +532,57 @@ function M.canPlace(cell)
   return Inventory.CanPlace(cell.place)
 end
 
+local function hasStackRoom(held, item)
+  return item and item.id == held.id and item.stackable and item.count < item.stackSize
+    and not (held.sellable and item.attuned)
+end
+
+function M.stackTargets(held, pin)
+  if not held.stackable or Windows.Shown("MerchantWnd") then return nil end
+  local data = inventorySnapshot()
+  if not data then return nil end
+  local stacks = {}
+  local prefix = pin and (pin .. ":")
+  for _, row in ipairs(data.rows) do
+    if row.where == "carried" and row.slot <= data.lastGeneralSlot and hasStackRoom(held, row.item)
+        and (not prefix or row.place:sub(1, #prefix) == prefix) then
+      stacks[#stacks + 1] = row
+    end
+  end
+  return #stacks > 0 and stacks or nil
+end
+
+-- Return the original cursor remainder, or nil when the drop should stop.
+function M.mergeHeld(stacks, held)
+  if not M.actions() or Windows.Shown("MerchantWnd") then return nil end
+  for _, stack in ipairs(stacks) do
+    local item = Inventory.Item(stack.slot, stack.sub)
+    if hasStackRoom(held, item) then
+      local revision = Inventory.ItemsRevision()
+      if not M.click(stack, "left") then return nil end
+      cursorFrame = -1
+      local after = Inventory.Item(Inventory.CursorSlot)
+      if not after then return nil end
+      if after.id ~= held.id then return nil end
+      local afterRevision = Inventory.ItemsRevision()
+      if afterRevision ~= revision and after.count == item.count then
+        -- Older hosts do not expose the cursor's instance flags. An incompatible
+        -- carried stack swaps the two items. Restore it before trying another slot.
+        if not M.click(stack, "left") then return nil end
+        local restored = Inventory.Item(Inventory.CursorSlot)
+        if Inventory.ItemsRevision() == afterRevision or not restored or restored.id ~= held.id
+            or restored.count ~= held.count then return nil end
+      elseif after.count == held.count - math.min(held.count, item.stackSize - item.count) then
+        held = after
+        snapshot = nil -- A partial native merge can leave the revision unchanged.
+      elseif after.count ~= held.count then
+        return nil
+      end
+    end
+  end
+  return held
+end
+
 function M.setKept(cell, on)
   if not cell or not cell.item or cell.stale or not M.actions() then return false end
   Inventory.SetItemKept(cell.item.id, cell.item.name, on)

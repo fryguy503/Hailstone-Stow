@@ -459,3 +459,137 @@ return tostring(name == "Crafting Toolbox" and combine and scope == "inventory")
     }
     ImGui::DestroyContext(ctx);
 }
+
+TEST_CASE("Stow add-on: the carried free-slot control fills stacks before using space") {
+    constexpr std::uint32_t item_id = 6002;
+    unsigned held_count = 1;
+    unsigned second_count = 0;
+    unsigned first_expected = 99;
+    unsigned remaining = 0;
+    bool incompatible = false;
+    bool compact_tile = false;
+    SUBCASE("the dock button merges a single item into a carried bag stack") {}
+    SUBCASE("the compact Empty Slots tile fills multiple stacks and stows the remainder") {
+        held_count = 5;
+        second_count = 97;
+        remaining = 2;
+        compact_tile = true;
+    }
+    SUBCASE("an attuned stack with the same item ID stays in place") {
+        held_count = 99;
+        first_expected = 98;
+        remaining = 99;
+        incompatible = true;
+    }
+
+    const auto stack = [&](std::int16_t slot, unsigned count, std::uint32_t instance) {
+        auto item = make_item(item_id, "Peridot", slot, count);
+        item.max_stack = 99;
+        item.instance_id = instance;
+        item.serial = std::to_string(instance);
+        if (incompatible) item.no_drop = 0; // Match the Lua-visible tradeability of the attuned stack.
+        return item;
+    };
+    auto bag = bag_item(6001, "Component Pouch", 24);
+    bag.bag_size = 4;
+    auto first = stack(24, 98, 60020);
+    first.attuned = incompatible;
+    bag.contents.push_back({0, first});
+    if (second_count) bag.contents.push_back({1, stack(24, second_count, 60021)});
+    MockConfig config = MockConfig::standard();
+    auto& inventory = config.characters[0].inventory;
+    inventory.push_back(bag);
+    inventory.push_back(bag_item(6003, "Travel Pouch", 26));
+    inventory.push_back(stack(27, held_count, 60022));
+    Rig rig(std::move(config), quick_options());
+    REQUIRE(rig.to_zone());
+    auto& conn = rig.conn;
+    put_coin_away(conn);
+
+    ScratchDir scratch("stow_cursor_stack_drop");
+    const auto settings = scratch.path() / "settings.txt";
+    std::ofstream(settings)
+        << "plugin.script:stow.stow.stow-test%7Cgennro.option.dockGrowth=up\n"
+        << "plugin.script:stow.stow.stow-test%7Cgennro.option.emptySlotsCard=" << compact_tile << '\n'
+        << "plugin.script:stow.stow.compact.anchor.allBags=180,440\n";
+    const std::unique_ptr<ImGuiContext, decltype(&ImGui::DestroyContext)> imgui(ImGui::CreateContext(),
+                                                                             ImGui::DestroyContext);
+    auto& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.BackendFlags |= ImGuiBackendFlags_RendererHasTextures;
+    plugin::UiBridge bridge;
+    bridge.add_function("stow", "server_identity", [](const auto&) {
+        return plugin::UiValue::string("stow-test");
+    }, plugin::UiBridge::Kind::Script);
+    app::UiHost host;
+    host.in_game = host.ui_ready = true;
+    host.game = &rig.game;
+    host.conn = &conn;
+    host.plugin_ui = &bridge;
+    constexpr std::uint32_t caps = plugin::kCapRead | plugin::kCapUi | plugin::kCapActions;
+    host.plugin_caps = [](std::string_view) { return caps; };
+    app::UiApi api(host);
+    api.load_layout(scratch.path() / "defaults.ini", scratch.path() / "UI.ini", {});
+    ui::lua::LuaUi lua(ui_dir() / "modern", settings);
+    lua.add_ui_api([&](lua_State* L) { api.register_functions(L); });
+    lua.set_caller_scope([&](std::string_view tag) -> std::shared_ptr<void> {
+        return std::make_shared<plugin::CallerScope>(caps, tag);
+    });
+    const auto stow = fs::absolute(fs::path(__FILE__).parent_path().parent_path());
+    lua.set_folders({{"script:stow", stow / "ui" / "modern"}});
+    const auto render = [&] {
+        api.begin_frame();
+        frame(lua);
+        rig.step();
+    };
+    const auto free_slots = [&] {
+        return std::stoi(lua.run_for_test("script:stow", "return tostring((hs.UI.inventory.InventorySpace()))"));
+    };
+    render();
+    api.toggle_all_bags();
+    conn.click_slot(at(27), true, false);
+    REQUIRE(conn.inventory().cursor() != nullptr);
+    CHECK(conn.inventory().cursor()->stack_count == held_count);
+    REQUIRE(conn.inventory().at(at(24, 0)) != nullptr);
+    CHECK((conn.inventory().at(at(24, 0))->attuned != 0) == incompatible);
+    const auto free_before = free_slots();
+    for (int i = 0; i < 3; ++i) render();
+    auto* window = ImGui::FindWindowByName("Stow Bags###stow.allBags");
+    REQUIRE(window != nullptr);
+    REQUIRE(window->Active);
+    const auto id = window->GetID(compact_tile ? "##stowSlot.empty.inventory" : "##stowDock.empty.inventory");
+    for (float y = compact_tile ? window->Size.y - 5.f : 53.f;
+         y >= 3.f && imgui->HoveredId != id; y -= 5.f) {
+        for (float x = 8.f; x < window->Size.x && imgui->HoveredId != id; x += 7.f) {
+            io.AddMousePosEvent(window->Pos.x + x, window->Pos.y + window->Size.y - y);
+            render();
+        }
+    }
+    REQUIRE(imgui->HoveredId == id);
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+    render();
+    io.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+    render();
+    render();
+    CHECK(ImGui::FindWindowByName("UI errors") == nullptr);
+    CHECK(conn.inventory().cursor() == nullptr);
+
+    const auto* first_after = conn.inventory().at(at(24, 0));
+    REQUIRE(first_after != nullptr);
+    CHECK(first_after->id == item_id);
+    CHECK(first_after->stack_count == first_expected);
+    CHECK((first_after->attuned != 0) == incompatible);
+    CHECK(first_after->instance_id == first.instance_id);
+    if (second_count) {
+        const auto* second_after = conn.inventory().at(at(24, 1));
+        REQUIRE(second_after != nullptr);
+        CHECK(second_after->id == item_id);
+        CHECK(second_after->stack_count == 99u);
+    }
+    CHECK(free_slots() == free_before - (remaining != 0));
+    const auto unattuned_total = held_count + (incompatible ? 0u : first.stack_count) + second_count;
+    CHECK(lua.run_for_test("script:stow", "local n = 0 "
+        "for _, row in ipairs(hs.UI.inventory.AllItems()) do "
+        "if row.where == 'carried' and row.item.id == 6002 and not row.item.attuned then n = n + row.item.count end "
+        "end return tostring(n)") == std::to_string(unattuned_total));
+}

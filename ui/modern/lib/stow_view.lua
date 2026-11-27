@@ -263,7 +263,7 @@ local function sectionFor(data, scope, state, scale, columns)
     end
   end
   return {scope = scope, data = data, cards = cards,
-    target = {scope = scope, free = free, capacity = capacity, cells = freeCells}}
+    target = {scope = scope, free = free, capacity = capacity, cells = freeCells, pin = state.pinned[scope]}}
 end
 
 local function addFreeCard(section, state, showCompact, columns, scale)
