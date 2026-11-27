@@ -8,6 +8,7 @@ local Dock = dofile("lib/stow_dock.lua")
 local API = hs.UI
 local C = T.color
 local V = { model = S }
+local clearNewWidth = 20
 
 local bankTints = { slate = { 0.58, 0.65, 0.78, 1 }, blue = { 0.42, 0.74, 0.99, 1 } }
 local bagKinds = {
@@ -213,6 +214,8 @@ local function collect(data, scope, state, scale, columns, freeCells)
   local query = state.query
   for _, group in ipairs(data.groups) do
     local cells, total, matched = {}, 0, 0
+    local isNewGroup = scope == "inventory" and group.id == "new"
+    local hasTrackedItems = false
     for _, cell in ipairs(group.cells) do
       if inBag(cell, pin) then
         if cell.empty and not cell.stale then freeCells[#freeCells + 1] = cell end
@@ -220,6 +223,7 @@ local function collect(data, scope, state, scale, columns, freeCells)
         if cell.item then
           total = total + 1
           if cell.match then matched = matched + 1 end
+          if isNewGroup and cell.new then hasTrackedItems = true end
         end
       end
     end
@@ -230,7 +234,12 @@ local function collect(data, scope, state, scale, columns, freeCells)
       if kind then label = label .. " · " .. kind.label end
       local count = query ~= "" and (matched .. " / " .. total) or nil
       local limit = data.mode == "combined" and columns or math.min(columns, 7)
-      cards[#cards + 1] = newCard(scope .. "." .. group.id, label, count, cells, limit, scale)
+      local card = newCard(scope .. "." .. group.id, label, count, cells, limit, scale)
+      if hasTrackedItems then
+        card.clearNew = true
+        card.captionWidth = card.captionWidth + clearNewWidth * scale
+      end
+      cards[#cards + 1] = card
     end
   end
   return cards
@@ -281,7 +290,10 @@ local function cardHeader(card, x, y, w, h, scale, accent, state)
   local key = "stow.collapsed." .. card.id
   local closed = card.closed
   if card.freeTarget then closed = not card.expanded end
-  if T.Hit("##heading." .. card.id, x, y, x + w, y + h, false) then
+  local rightEdge = x + w
+  local showClear = card.clearNew and w > clearNewWidth * scale
+  local headingEnd = showClear and rightEdge - clearNewWidth * scale or rightEdge
+  if T.Hit("##heading." .. card.id, x, y, headingEnd, y + h, false) then
     if card.freeTarget then
       if #card.freeTarget.cells > 0 then
         state.expandedFree[card.freeTarget.scope] = closed
@@ -303,7 +315,7 @@ local function cardHeader(card, x, y, w, h, scale, accent, state)
     ui.DrawLine(cx - k, middle - k / 2, cx, middle + k / 2, c[1], c[2], c[3], 1, 1.2 * scale)
     ui.DrawLine(cx, middle + k / 2, cx + k, middle - k / 2, c[1], c[2], c[3], 1, 1.2 * scale)
   end
-  local right = x + w - 7 * scale
+  local right = headingEnd - 7 * scale
   if card.count then
     local countW, countH = T.TextSize(card.count, T.font.tiny)
     T.Text(right, middle - countH / 2, card.count, C.faint, T.font.tiny, "right")
@@ -314,6 +326,11 @@ local function cardHeader(card, x, y, w, h, scale, accent, state)
   local label = T.Fit(card.label, math.max(1, right - left), T.font.small)
   T.Text(left, middle - textH / 2, label, C.text, T.font.small)
   if hovered and label ~= card.label then ui.SetTooltip(card.label) end
+  if showClear and T.Button("##stowCard.clearNew", headingEnd + 2 * scale, y + scale,
+      rightEdge - 2 * scale, y + h - scale, scale, "×",
+      {tooltip = "Clear New Items for all carried items"}) then
+    S.resetNew()
+  end
   return not closed or card.target ~= nil
 end
 

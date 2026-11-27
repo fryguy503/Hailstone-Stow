@@ -273,6 +273,39 @@ end
         CHECK(MockEqServer::count(rig.server.zone_log, net::Op::MoveItem) > moves_before_sort);
         CHECK(id_at(conn, 26, 0) == part.id);
 
+        auto new_quest = make_item(5300, "Etched Quest Seal", 30, 2);
+        new_quest.quest_item = 1;
+        REQUIRE(id_at(conn, 30) == 0u);
+        conn.receive_zone_packet_for_test(net::encode_item_packet(false, {net::kItemPacketCharInventory, new_quest}));
+        frames();
+        REQUIRE(id_at(conn, 30) == new_quest.id);
+        REQUIRE(run("return tostring(S.view('inventory', 'grouped', 'is:new').matched)") == "1");
+        REQUIRE(click_item(*aggregated_bags, "##heading.inventory.new", 6.f, 85.f, false));
+        frames();
+        REQUIRE(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "1");
+
+        const auto before_clear = conn.inventory().revision();
+        const auto moves_before_clear = MockEqServer::count(rig.server.zone_log, net::Op::MoveItem);
+        REQUIRE(click_item(*aggregated_bags, "##stowCard.clearNew", 6.f, 85.f, false));
+        frames();
+        CHECK(run("return tostring(S.view('inventory', 'grouped', 'is:new').matched)") == "0");
+        CHECK(run(R"lua(
+for _, group in ipairs(S.view("inventory", "grouped").groups) do
+  for _, cell in ipairs(group.cells) do
+    if cell.place == "i:30" then return group.id end
+  end
+end
+)lua") == "quest");
+        CHECK_FALSE(conn.item_job().has_value());
+        CHECK(conn.inventory().revision() == before_clear);
+        CHECK(MockEqServer::count(rig.server.zone_log, net::Op::MoveItem) == moves_before_clear);
+        CHECK(run("return ui.GetSetting('stow.collapsed.inventory.new')") == "1");
+
+        ++new_quest.stack_count;
+        conn.receive_zone_packet_for_test(net::encode_item_packet(false, {net::kItemPacketCharInventory, new_quest}));
+        frames();
+        CHECK(run("return tostring(S.view('inventory', 'grouped', 'is:new').matched)") == "1");
+
         REQUIRE(run("assert(S.set('dockGrowth','down')); return 'ok'") == "ok");
         frames();
         REQUIRE(drag_dock(*aggregated_bags, false, {-500.f, -500.f}));
